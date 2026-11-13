@@ -39,5 +39,7 @@ See [docs/KEYS.md](docs/KEYS.md) for keys. nchat is MIT licensed (see `nchat/LIC
 ## Updating the patch after changing nchat sources
 
 ```sh
-cd nchat && git add -N . && git diff --binary > ../patches/0001-piazza.patch
+scripts/update-patch.sh
 ```
+
+`./uninstall.sh` removes the launcher again.

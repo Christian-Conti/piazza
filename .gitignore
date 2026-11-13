@@ -1,2 +1,14 @@
+# build output and installer state
+install.log
 nchat/build/
 nchat/.piazza-applied
+
+# archives made for sharing
+*.zip
+
+# editors / OS
+*.swp
+*~
+.DS_Store
+.idea/
+.vscode/

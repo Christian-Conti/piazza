@@ -41,7 +41,8 @@ fi
 
 # 3. build (first build compiles tdlib for Telegram: expect 15-30 minutes)
 cmake -S "$ROOT/nchat" -B "$ROOT/nchat/build" -G Ninja -DHAS_TESTS=OFF -DCMAKE_BUILD_TYPE=Release
-cmake --build "$ROOT/nchat/build" --target nchat
+# all targets: nchat plus the protocol plugins (libtgchat.so, libwmchat.so)
+cmake --build "$ROOT/nchat/build"
 
 # 4. launcher
 mkdir -p "$HOME/.local/bin"
