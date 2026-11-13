@@ -19,8 +19,13 @@ trap cleanup EXIT INT TERM
 show() {
   clear
   "$kitten" icat --clear --align=center "$1"
-  printf '\n  %s  -  Enter/q to close ' "$(basename "$f")"
-  read -r _
+  printf '\n  %s  -  any key to close%s ' "$(basename "$f")" "$2"
+  local key=""
+  IFS= read -rsn1 key
+  if [ "$key" = "o" ] || [ "$key" = "O" ]; then
+    xdg-open "$f" >/dev/null 2>&1 &
+  fi
+  return 0
 }
 
 fmt_time() { printf '%d:%02d' $(($1 / 60)) $(($1 % 60)); }
@@ -90,20 +95,25 @@ case "$mime" in
     # kitty cannot decode every WhatsApp webp; convert to PNG first
     if command -v ffmpeg >/dev/null 2>&1; then
       tmp="$(mktemp --suffix=.png)"
-      ffmpeg -loglevel quiet -y -i "$f" -frames:v 1 "$tmp" </dev/null && show "$tmp" || show "$f"
+      if ffmpeg -loglevel quiet -y -i "$f" -frames:v 1 "$tmp" </dev/null; then show "$tmp" ""; else show "$f" ""; fi
     else
-      show "$f"
+      show "$f" ""
     fi
     ;;
-  image/*) show "$f" ;;
+  image/*) show "$f" "" ;;
   video/*)
-    dur="$(ffprobe -v error -show_entries format=duration -of csv=p=0 "$f" 2>/dev/null | cut -d. -f1)"
-    if command -v ffmpeg >/dev/null 2>&1 && [ "${dur:-999}" -le 20 ]; then
-      # short clip / GIF: play it looping in the terminal as an animated GIF
+    if command -v ffmpeg >/dev/null 2>&1; then
+      # play it looping in the terminal (first 30 s, silent) as an animated GIF; o = open in the system player
+      clear
+      printf '\n  preparing preview of %s ...' "$(basename "$f")"
       tmp="$(mktemp --suffix=.gif)"
-      ffmpeg -loglevel quiet -y -t 20 -i "$f" \
+      if ffmpeg -loglevel quiet -y -t 30 -i "$f" \
         -vf "fps=15,scale='min(640,iw)':-1:flags=lanczos,split[s0][s1];[s0]palettegen[p];[s1][p]paletteuse" \
-        "$tmp" </dev/null && show "$tmp" || xdg-open "$f" >/dev/null 2>&1 &
+        "$tmp" </dev/null; then
+        show "$tmp" " · o = open in player"
+      else
+        xdg-open "$f" >/dev/null 2>&1 &
+      fi
     else
       xdg-open "$f" >/dev/null 2>&1 &
     fi

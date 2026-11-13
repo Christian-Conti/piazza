@@ -17,6 +17,7 @@
 | `Ctrl-T` | attach a file |
 | `Alt-O` | open attachment (same as Enter on it) |
 | `Space` / `Enter` on a voice message | play / pause it in the bubble; `PIAZZA_PLAYER` sets another player |
+| tap / click | chat row, tab, bubble (selects it), quote card (jumps to the quoted message); wheel scrolls |
 | `Alt-O` on audio | full-screen player (`space` pause, `q` stop) |
 | `Ctrl-S` | emoji picker: `Tab`/`←`/`→` categories, `Enter` insert, recent first |
 | `Ctrl-C` | clear prompt / cancel; on an empty prompt: quit |

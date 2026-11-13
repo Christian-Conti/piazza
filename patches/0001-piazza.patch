@@ -4592,7 +4592,7 @@ index f8d47c3..ace3be3 100644
  
    if (AppUtil::IsTerminateRequested())
 diff --git a/src/ui.cpp b/src/ui.cpp
-index bf7098e..8d09a9e 100644
+index bf7098e..31ea959 100644
 --- a/src/ui.cpp
 +++ b/src/ui.cpp
 @@ -20,6 +20,7 @@
@@ -4603,7 +4603,7 @@ index bf7098e..8d09a9e 100644
  #include "uicontroller.h"
  #include "uikeyconfig.h"
  #include "uikeydump.h"
-@@ -52,11 +53,13 @@ void Ui::Init()
+@@ -52,11 +53,20 @@ void Ui::Init()
    printf("\033[?1004h"); // enable terminal focus in/out event
  
    setlocale(LC_ALL, "");
@@ -4613,6 +4613,13 @@ index bf7098e..8d09a9e 100644
    cbreak();
    UiConfig::GetBool("linefeed_on_enter") ? nl() : nonl();
    keypad(stdscr, TRUE);
++  if (UiConfig::GetBool("mouse_enabled"))
++  {
++    // mouse/touch: taps on a chat, tab, bubble or quote; wheel scrolls. Hold Shift to select text with the mouse.
++    mouseinterval(0);
++    mousemask(BUTTON1_PRESSED | BUTTON4_PRESSED | BUTTON5_PRESSED, nullptr);
++  }
++
 +  set_escdelay(25); // default 1000 ms makes a lone Esc feel dead; Alt-sequences arrive in one burst
    curs_set(0);
    timeout(0);
@@ -5082,19 +5089,20 @@ index 08acde9..3d9d426 100644
  private:
    static int GetColorId(const std::string& p_Str);
 diff --git a/src/uiconfig.cpp b/src/uiconfig.cpp
-index a852e2b..62b3b85 100644
+index a852e2b..2b9259a 100644
 --- a/src/uiconfig.cpp
 +++ b/src/uiconfig.cpp
-@@ -33,6 +33,8 @@ void UiConfig::Init()
+@@ -33,6 +33,9 @@ void UiConfig::Init()
      { "desktop_notify_active_current", "0" },
      { "desktop_notify_active_noncurrent", "1" },
      { "desktop_notify_command", "" },
 +    { "sound_enabled", "1" },
++    { "mouse_enabled", "1" },
 +    { "sound_command", "" }, // empty = auto (pw-play/paplay + freedesktop message sound)
      { "desktop_notify_connectivity", "1" },
      { "desktop_notify_enabled", "0" },
      { "desktop_notify_inactive", "1" },
-@@ -50,7 +52,7 @@ void UiConfig::Init()
+@@ -50,7 +53,7 @@ void UiConfig::Init()
      { "linefeed_on_enter", "1" },
      { "link_open_command", "" },
      { "list_enabled", "1" },
@@ -5458,7 +5466,7 @@ index 32e8e82..5652628 100644
  
    werase(m_Win);
 diff --git a/src/uihistoryview.cpp b/src/uihistoryview.cpp
-index ef9da40..2a9d74e 100644
+index ef9da40..e8e8eb0 100644
 --- a/src/uihistoryview.cpp
 +++ b/src/uihistoryview.cpp
 @@ -7,6 +7,12 @@
@@ -5579,7 +5587,7 @@ index ef9da40..2a9d74e 100644
    const bool emojiEnabled = m_Model->GetEmojiEnabledLocked();
    static const bool developerMode = AppUtil::GetDeveloperMode();
  
-@@ -83,10 +139,37 @@ void UiHistoryView::Draw()
+@@ -83,10 +139,38 @@ void UiHistoryView::Draw()
    int messageOffset = std::max(m_Model->GetMessageOffsetLocked(currentChat.first, currentChat.second), 0);
  
    werase(m_PaddedWin);
@@ -5611,6 +5619,7 @@ index ef9da40..2a9d74e 100644
 +  const int kindIdx = std::min(std::max(m_Model->GetProfileKindLocked(currentChat.first), 0), 5);
 +  std::vector<UiImage::Corner> corners;
 +  std::vector<UiImage::Placement> placements;
++  std::vector<UiHitRegion> hits; // where a tap lands: bubbles and their quote cards
 +  int paddedBegY = 0;
 +  int paddedBegX = 0;
 +  getbegyx(m_PaddedWin, paddedBegY, paddedBegX);
@@ -5618,7 +5627,7 @@ index ef9da40..2a9d74e 100644
    bool firstMessage = true;
    int y = m_PaddedH - 1;
    for (auto it = std::next(messageVec.begin(), messageOffset); it != messageVec.end(); ++it)
-@@ -101,24 +184,16 @@ void UiHistoryView::Draw()
+@@ -101,24 +185,16 @@ void UiHistoryView::Draw()
      }
  
      ChatMessage& msg = msgIt->second;
@@ -5649,7 +5658,7 @@ index ef9da40..2a9d74e 100644
      }();
  
      std::vector<std::wstring> wlines;
-@@ -131,16 +206,19 @@ void UiHistoryView::Draw()
+@@ -131,16 +207,19 @@ void UiHistoryView::Draw()
          text = StrUtil::Textize(text);
        }
  
@@ -5670,7 +5679,7 @@ index ef9da40..2a9d74e 100644
          if (!quotedIt->second.text.empty())
          {
            quotedText = StrUtil::Split(quotedIt->second.text, '\n').at(0);
-@@ -161,17 +239,25 @@ void UiHistoryView::Draw()
+@@ -161,17 +240,25 @@ void UiHistoryView::Draw()
          quotedText = "";
        }
  
@@ -5702,7 +5711,7 @@ index ef9da40..2a9d74e 100644
      if (!msg.fileInfo.empty())
      {
        FileInfo fileInfo = ProtocolUtil::FileInfoFromHex(msg.fileInfo);
-@@ -181,10 +267,24 @@ void UiHistoryView::Draw()
+@@ -181,10 +268,24 @@ void UiHistoryView::Draw()
          (AppConfig::GetNum("attachment_prefetch") == AttachmentPrefetchAll);
        static const bool isAttachmentPrefetchSelected =
          (AppConfig::GetNum("attachment_prefetch") == AttachmentPrefetchSelected);
@@ -5728,7 +5737,7 @@ index ef9da40..2a9d74e 100644
            m_Model->DownloadAttachmentLocked(currentChat.first, currentChat.second, *it,
                                              fileInfo.fileId, DownloadFileActionNone);
            fileInfo = ProtocolUtil::FileInfoFromHex(msg.fileInfo);
-@@ -221,7 +321,57 @@ void UiHistoryView::Draw()
+@@ -221,7 +322,57 @@ void UiHistoryView::Draw()
        }
  
        std::wstring fileStr = attachmentIndicator + StrUtil::ToWString(fileName + fileStatus);
@@ -5787,7 +5796,7 @@ index ef9da40..2a9d74e 100644
      }
  
      // Reactions
-@@ -289,7 +439,7 @@ void UiHistoryView::Draw()
+@@ -289,7 +440,7 @@ void UiHistoryView::Draw()
              reactionsText = StrUtil::Textize(reactionsText);
            }
  
@@ -5796,7 +5805,7 @@ index ef9da40..2a9d74e 100644
            std::wstring reactions = StrUtil::ToWString(reactionsText);
            if (StrUtil::WStringWidth(reactions) > maxReactionsLen)
            {
-@@ -306,7 +456,7 @@ void UiHistoryView::Draw()
+@@ -306,7 +457,7 @@ void UiHistoryView::Draw()
        }
      }
  
@@ -5805,7 +5814,7 @@ index ef9da40..2a9d74e 100644
      if (firstMessage && ((int)wlines.size() > maxMessageLines))
      {
        wlines.resize(maxMessageLines - 1);
-@@ -314,39 +464,154 @@ void UiHistoryView::Draw()
+@@ -314,39 +465,154 @@ void UiHistoryView::Draw()
        reactionLines = 0;
      }
  
@@ -5924,12 +5933,10 @@ index ef9da40..2a9d74e 100644
 +        wattron(m_PaddedWin, quoteAttr | (msg.isOutgoing ? kind.quoteSent : kind.quoteRecv));
 +        mvwaddnwstr(m_PaddedWin, y, bx + 2, inset.c_str(), std::min((int)inset.size(), bubbleW - 4));
 +        wattroff(m_PaddedWin, quoteAttr | (msg.isOutgoing ? kind.quoteSent : kind.quoteRecv));
-       }
--      else if (isQuote)
++      }
 +
 +      if (imgIsVideo && (imgRows > 0) && (lineIdx == imgRows / 2))
-       {
--        wattroff(m_PaddedWin, attributeText | colorPairTextQuoted);
++      {
 +        // play badge (with duration) centered on the thumbnail; the picture is drawn below the text
 +        std::wstring badge = L" \u25b6 ";
 +        if (imgDurationSec > 0)
@@ -5954,11 +5961,13 @@ index ef9da40..2a9d74e 100644
 +        mvwaddnwstr(m_PaddedWin, y, bx, L"  ", 2);
 +        mvwaddnwstr(m_PaddedWin, y, bx + bubbleW - 2, L"  ", 2);
 +        wattroff(m_PaddedWin, colorPairPane);
-+      }
+       }
+-      else if (isQuote)
 +
 +      // soft sides: the outer cells become half blocks (right half on the left edge, left half on the right edge)
 +      if (!isCornerRow)
-+      {
+       {
+-        wattroff(m_PaddedWin, attributeText | colorPairTextQuoted);
 +        const int sidePair = isSelectedMessage ? colorPairEdgeSelected : (msg.isOutgoing ? kind.edgeSent : kind.edgeRecv);
 +        wattron(m_PaddedWin, sidePair);
 +        mvwaddnwstr(m_PaddedWin, y, bx, L"\u2590", 1);
@@ -5972,7 +5981,7 @@ index ef9da40..2a9d74e 100644
        }
        else if (isReaction)
        {
-@@ -360,8 +625,30 @@ void UiHistoryView::Draw()
+@@ -360,8 +626,54 @@ void UiHistoryView::Draw()
        if (--y < 0) break;
      }
  
@@ -5991,6 +6000,30 @@ index ef9da40..2a9d74e 100644
  
 +    drawEdge(y, true);
 +    yTopEdge = y;
++    {
++      // the whole bubble selects the message; its quote card (drawn later, so on top) jumps to the quoted one
++      UiHitRegion bubbleHit;
++      bubbleHit.type = UiHitRegion::Bubble;
++      bubbleHit.x = paddedBegX + bx;
++      bubbleHit.y = paddedBegY + yTopEdge;
++      bubbleHit.w = bubbleW;
++      bubbleHit.h = std::max(1, yBottomEdge - yTopEdge + 1);
++      bubbleHit.id = *it;
++      hits.push_back(bubbleHit);
++      if ((quoteFirstY >= 0) && (quoteLastY >= 0))
++      {
++        UiHitRegion quoteHit;
++        quoteHit.type = UiHitRegion::Quote;
++        quoteHit.x = paddedBegX + bx + 2;
++        quoteHit.y = paddedBegY + quoteFirstY;
++        quoteHit.w = std::max(1, bubbleW - 4);
++        quoteHit.h = std::max(1, quoteLastY - quoteFirstY + 1);
++        quoteHit.id = *it;
++        hits.push_back(quoteHit);
++        LOG_DEBUG("quote card hit area x %d y %d w %d h %d", quoteHit.x, quoteHit.y, quoteHit.w, quoteHit.h);
++      }
++    }
++
 +    if (useCornerImages)
 +    {
 +      // top corners span the top edge row and the first text row
@@ -6003,7 +6036,7 @@ index ef9da40..2a9d74e 100644
      int attributeName = isSelectedMessage ? attributeNameSelected : attributeNameNormal;
      int colorPairName = [&]()
      {
-@@ -398,7 +685,12 @@ void UiHistoryView::Draw()
+@@ -398,7 +710,12 @@ void UiHistoryView::Draw()
      {
        if (msg.timeSent != std::numeric_limits<int64_t>::max())
        {
@@ -6017,7 +6050,7 @@ index ef9da40..2a9d74e 100644
        }
      }
  
-@@ -419,14 +711,76 @@ void UiHistoryView::Draw()
+@@ -419,14 +736,76 @@ void UiHistoryView::Draw()
          L" user " + StrUtil::ToWString(msg.senderId);
      }
  
@@ -6097,11 +6130,12 @@ index ef9da40..2a9d74e 100644
  
      if (--y < 0) break;
  
-@@ -434,6 +788,18 @@ void UiHistoryView::Draw()
+@@ -434,6 +813,19 @@ void UiHistoryView::Draw()
    }
  
    wrefresh(m_PaddedWin);
 +  UiImage::ShowAll(placements, corners);
++  m_Model->SetHistoryHitsLocked(hits);
 +
 +  // thin rule under the chat title
 +  if (m_RuleWin != nullptr)
@@ -6841,7 +6875,7 @@ index 0000000..2c411f5
 +void Clear();
 +}
 diff --git a/src/uikeyconfig.cpp b/src/uikeyconfig.cpp
-index e4d9356..030160c 100644
+index e4d9356..7b8216b 100644
 --- a/src/uikeyconfig.cpp
 +++ b/src/uikeyconfig.cpp
 @@ -37,6 +37,7 @@ void UiKeyConfig::InitKeyCodes(bool p_MapKeys)
@@ -6876,7 +6910,7 @@ index e4d9356..030160c 100644
      { "ext_call", "\\33\\164" }, // alt/opt-t
      { "ext_edit", "\\33\\145" }, // alt/opt-e
      { "react", "\\33\\163" }, // alt/opt-s
-@@ -233,21 +235,33 @@ void UiKeyConfig::Init(bool p_MapKeys)
+@@ -233,21 +235,34 @@ void UiKeyConfig::Init(bool p_MapKeys)
      { "toggle_help", "KEY_CTRLG" },
      { "toggle_list", "KEY_CTRLL" },
      { "toggle_top", "KEY_NONE" },
@@ -6891,6 +6925,7 @@ index e4d9356..030160c 100644
 +    { "tab_7", "KEY_F7" },
 +    { "tab_8", "KEY_F8" },
 +    { "tab_9", "KEY_F9" },
++    { "mouse", "KEY_MOUSE" },
 +    { "tab_toggle", "KEY_TAB" },
 +    { "tab_toggle_back", "KEY_BTAB" },
 +    { "next_chat", "KEY_CTRLB" },
@@ -6914,6 +6949,54 @@ index e4d9356..030160c 100644
      { "forward_msg", "\\33\\162" }, // alt/opt-r
      { "goto_chat", "KEY_CTRLN" },
      { "other_commands_help", "KEY_CTRLO" },
+diff --git a/src/uikeyinput.cpp b/src/uikeyinput.cpp
+index b483b1b..14c4f4b 100644
+--- a/src/uikeyinput.cpp
++++ b/src/uikeyinput.cpp
+@@ -11,9 +11,33 @@
+ 
+ #include "uikeyconfig.h"
+ 
++static int s_MouseX = 0;
++static int s_MouseY = 0;
++static unsigned long s_MouseState = 0;
++
++bool UiKeyInput::GetLastMouse(int& p_X, int& p_Y, unsigned long& p_State)
++{
++  p_X = s_MouseX;
++  p_Y = s_MouseY;
++  p_State = s_MouseState;
++  return true;
++}
++
+ int UiKeyInput::GetWch(wint_t* p_Wch)
+ {
+   int rv = get_wch(p_Wch);
++  if ((rv == KEY_CODE_YES) && (*p_Wch == KEY_MOUSE))
++  {
++    MEVENT ev;
++    s_MouseState = 0;
++    if (getmouse(&ev) == OK)
++    {
++      s_MouseX = ev.x;
++      s_MouseY = ev.y;
++      s_MouseState = (unsigned long)ev.bstate;
++    }
++  }
++
+   if (rv == KEY_CODE_YES)
+   {
+     *p_Wch = UiKeyConfig::GetOffsettedKeyCode(*p_Wch, true);
+diff --git a/src/uikeyinput.h b/src/uikeyinput.h
+index fc12219..211482c 100644
+--- a/src/uikeyinput.h
++++ b/src/uikeyinput.h
+@@ -13,4 +13,5 @@ class UiKeyInput
+ {
+ public:
+   static int GetWch(wint_t* p_Wch);
++  static bool GetLastMouse(int& p_X, int& p_Y, unsigned long& p_State); // event behind the last KEY_MOUSE key
+ };
 diff --git a/src/uilistdialog.cpp b/src/uilistdialog.cpp
 index baf13d6..ac23e3c 100644
 --- a/src/uilistdialog.cpp
@@ -6991,7 +7074,7 @@ index b89cc9b..b33bc97 100644
  
    void UpdateFooter();
 diff --git a/src/uilistview.cpp b/src/uilistview.cpp
-index e3a9160..0fb325c 100644
+index e3a9160..8923cee 100644
 --- a/src/uilistview.cpp
 +++ b/src/uilistview.cpp
 @@ -7,6 +7,8 @@
@@ -7031,7 +7114,7 @@ index e3a9160..0fb325c 100644
  }
  
  void UiListView::Draw()
-@@ -52,20 +61,93 @@ void UiListView::Draw()
+@@ -52,20 +61,105 @@ void UiListView::Draw()
    static int attribute = UiColorConfig::GetAttribute("list_attr");
    static int attributeSelected = UiColorConfig::GetAttribute("list_attr_selected");
    static int colorPairUnread = UiColorConfig::GetColorPair("list_color_unread");
@@ -7046,6 +7129,7 @@ index e3a9160..0fb325c 100644
 +  const int tab = m_Model->GetTabLocked();
 +
 +  // tab row: active tab reversed, unread count per tab
++  std::vector<UiHitRegion> hitsTabs;
 +  {
 +    static int tabColor = UiColorConfig::GetColorPair("list_color");
 +    static int tabAttr = UiColorConfig::GetAttribute("list_attr");
@@ -7063,6 +7147,14 @@ index e3a9160..0fb325c 100644
 +    {
 +      const int segX = t * (m_W / tabCount);
 +      const int segW = (t == (tabCount - 1)) ? (m_W - segX) : (m_W / tabCount);
++      UiHitRegion tabHit;
++      tabHit.type = UiHitRegion::Tab;
++      tabHit.index = t;
++      tabHit.x = m_X + segX;
++      tabHit.y = m_Y;
++      tabHit.w = segW;
++      tabHit.h = 1;
++      hitsTabs.push_back(tabHit);
 +      const int unread = m_Model->GetTabUnreadLocked(t);
 +      std::wstring badge = (unread > 0) ? StrUtil::ToWString(" \u25cf" + std::to_string(unread)) : L"";
 +      std::wstring name = StrUtil::ToWString(m_Model->GetTabNameLocked(t));
@@ -7094,6 +7186,8 @@ index e3a9160..0fb325c 100644
    std::vector<bool> unreads;
 -  for (auto& chatPair : p_ChatVec)
 +  std::vector<std::string> times;
++  std::vector<std::pair<std::string, std::string>> visibleChats; // parallel to names, for tap hit-testing
++  std::vector<UiHitRegion> hits;
 +  int visIndex = -1; // selected row within the active tab
 +  for (size_t ci = 0; ci < p_ChatVec.size(); ++ci)
    {
@@ -7105,6 +7199,7 @@ index e3a9160..0fb325c 100644
      bool isUnread = m_Model->GetChatIsUnreadLocked(chatPair.first, chatPair.second);
      names.push_back(name);
      unreads.push_back(isUnread);
++    visibleChats.push_back(chatPair);
 +
 +    // last activity: HH:MM today, weekday this week, otherwise day and month
 +    std::string when;
@@ -7127,7 +7222,7 @@ index e3a9160..0fb325c 100644
    }
  
    werase(m_PaddedWin);
-@@ -76,6 +158,7 @@ void UiListView::Draw()
+@@ -76,6 +170,7 @@ void UiListView::Draw()
    {
      int height = m_PaddedH;
      int count = names.size();
@@ -7135,7 +7230,7 @@ index e3a9160..0fb325c 100644
      int offset = std::min(std::max(0, index - ((height - 1) / 2)), std::max(0, count - height));
      int last = std::min((height + offset), count);
      for (int i = offset; i < last; ++i)
-@@ -83,18 +166,28 @@ void UiListView::Draw()
+@@ -83,18 +178,37 @@ void UiListView::Draw()
        if (i == index)
        {
          wattroff(m_PaddedWin, attribute);
@@ -7145,6 +7240,15 @@ index e3a9160..0fb325c 100644
  
        int y = i - offset;
 -      std::string name = names[i];
++      UiHitRegion rowHit;
++      rowHit.type = UiHitRegion::Chat;
++      rowHit.x = m_X;
++      rowHit.y = m_Y + 2 + y;
++      rowHit.w = m_W;
++      rowHit.h = 1;
++      rowHit.profileId = visibleChats[i].first;
++      rowHit.id = visibleChats[i].second;
++      hits.push_back(rowHit);
 +      std::string name = (i == index ? (listFocused ? "\u25b6 " : "\u203a ") : "  ") + names[i];
        if (!emojiEnabled)
        {
@@ -7168,7 +7272,7 @@ index e3a9160..0fb325c 100644
  
        if (unreads[i])
        {
-@@ -105,16 +198,20 @@ void UiListView::Draw()
+@@ -105,16 +219,20 @@ void UiListView::Draw()
  
        if (unreads[i])
        {
@@ -7194,6 +7298,14 @@ index e3a9160..0fb325c 100644
          wattron(m_PaddedWin, attribute);
        }
      }
+@@ -122,4 +240,7 @@ void UiListView::Draw()
+ 
+   wattroff(m_PaddedWin, attribute | colorPair);
+   wrefresh(m_PaddedWin);
++
++  hits.insert(hits.end(), hitsTabs.begin(), hitsTabs.end());
++  m_Model->SetListHitsLocked(hits);
+ }
 diff --git a/src/uilistview.h b/src/uilistview.h
 index e00eeae..6c7d41c 100644
 --- a/src/uilistview.h
@@ -7228,7 +7340,7 @@ index f5af738..2087136 100644
      m_Result = false;
      m_Running = false;
 diff --git a/src/uimodel.cpp b/src/uimodel.cpp
-index d40b779..22a4b46 100644
+index d40b779..598e0a0 100644
 --- a/src/uimodel.cpp
 +++ b/src/uimodel.cpp
 @@ -8,6 +8,7 @@
@@ -7705,7 +7817,7 @@ index d40b779..22a4b46 100644
  void UiModel::Impl::DesktopNotify(const std::string& p_Name, const std::string& p_Text)
  {
    static const bool desktopNotifyEnabled = UiConfig::GetBool("desktop_notify_enabled");
-@@ -3723,6 +4004,160 @@ void UiModel::Impl::SaveEditMessage()
+@@ -3723,6 +4004,275 @@ void UiModel::Impl::SaveEditMessage()
    Clear(false /*p_AllowUndo*/);
  }
  
@@ -7740,6 +7852,121 @@ index d40b779..22a4b46 100644
 +
 +  p_Path = fileInfo.filePath;
 +  return true;
++}
++
++void UiModel::Impl::SelectMessageById(const std::string& p_MsgId)
++{
++  const std::string& profileId = m_CurrentChat.first;
++  const std::string& chatId = m_CurrentChat.second;
++  const std::vector<std::string>& messageVec = m_MessageVec[profileId][chatId];
++  auto it = std::find(messageVec.begin(), messageVec.end(), p_MsgId);
++  if (it == messageVec.end()) return;
++
++  m_MessageOffset[profileId][chatId] = (int)std::distance(messageVec.begin(), it);
++  m_FocusList = false;
++  SetSelectMessageActive(true);
++  UpdateHistory();
++  UpdateList();
++  UpdateStatus();
++}
++
++// tap on a quote card: go to the message it quotes (already loaded: jump now, else ask the protocol to find it)
++void UiModel::Impl::JumpToQuotedOf(const std::string& p_MsgId)
++{
++  const std::string& profileId = m_CurrentChat.first;
++  const std::string& chatId = m_CurrentChat.second;
++  const auto& messages = m_Messages[profileId][chatId];
++  auto mit = messages.find(p_MsgId);
++  if ((mit == messages.end()) || mit->second.quotedId.empty()) return;
++
++  const std::string quotedId = mit->second.quotedId;
++  const std::vector<std::string>& messageVec = m_MessageVec[profileId][chatId];
++  if (std::find(messageVec.begin(), messageVec.end(), quotedId) != messageVec.end())
++  {
++    SelectMessageById(quotedId);
++  }
++  else
++  {
++    SelectMessageById(p_MsgId);
++    OnKeyJumpQuoted(); // not loaded yet: the protocol searches for it
++  }
++}
++
++void UiModel::Impl::OnMouse(int p_X, int p_Y, unsigned long p_State)
++{
++  AnyUserKeyInput();
++  if (GetEditMessageActive()) return;
++
++  // wheel: scroll the messages (older / newer)
++  if (p_State & (BUTTON4_PRESSED | BUTTON5_PRESSED))
++  {
++    const std::string& profileId = m_CurrentChat.first;
++    const std::string& chatId = m_CurrentChat.second;
++    if (profileId.empty()) return;
++    const int messageCount = m_Messages[profileId][chatId].size();
++    int& messageOffset = m_MessageOffset[profileId][chatId];
++    if (p_State & BUTTON4_PRESSED)
++    {
++      messageOffset = std::min(messageOffset + 2, std::max(0, messageCount - 1));
++      RequestMessagesCurrentChat();
++    }
++    else
++    {
++      messageOffset = std::max(0, messageOffset - 2);
++    }
++
++    UpdateHistory();
++    return;
++  }
++
++  if (!(p_State & BUTTON1_PRESSED)) return;
++  LOG_DEBUG("tap at %d,%d", p_X, p_Y);
++
++  auto hit = [&](const std::vector<UiHitRegion>& p_Regions) -> const UiHitRegion*
++  {
++    for (auto it = p_Regions.rbegin(); it != p_Regions.rend(); ++it) // later regions sit on top
++    {
++      if ((p_X >= it->x) && (p_X < it->x + it->w) && (p_Y >= it->y) && (p_Y < it->y + it->h)) return &*it;
++    }
++
++    return nullptr;
++  };
++
++  LOG_DEBUG("hit regions: list %d history %d", (int)m_HitList.size(), (int)m_HitHistory.size());
++  if (const UiHitRegion* region = hit(m_HitList))
++  {
++    LOG_DEBUG("list region type %d", region->type);
++    if (region->type == UiHitRegion::Tab)
++    {
++      OnKeySetTab(region->index);
++    }
++    else if (region->type == UiHitRegion::Chat)
++    {
++      for (int i = 0; i < (int)m_ChatVec.size(); ++i)
++      {
++        if ((m_ChatVec.at(i).first == region->profileId) && (m_ChatVec.at(i).second == region->id))
++        {
++          m_CurrentChatIndex = i;
++          m_CurrentChat = m_ChatVec.at(i);
++          m_FocusList = true;
++          OnCurrentChatChanged();
++          SetSelectMessageActive(false);
++          UpdateList();
++          break;
++        }
++      }
++    }
++
++    return;
++  }
++
++  if (const UiHitRegion* region = hit(m_HitHistory))
++  {
++    LOG_DEBUG("history region type %d at %d,%d %dx%d", region->type, region->x, region->y, region->w, region->h);
++    if (region->type == UiHitRegion::Quote) LOG_DEBUG("tap on quote card of %s", region->id.c_str());
++    if (region->type == UiHitRegion::Quote) JumpToQuotedOf(region->id);
++    else if (region->type == UiHitRegion::Bubble) SelectMessageById(region->id);
++  }
 +}
 +
 +bool UiModel::Impl::QuickKeyContext()
@@ -7866,7 +8093,7 @@ index d40b779..22a4b46 100644
  void UiModel::Impl::OnKeyCancel()
  {
    AnyUserKeyInput();
-@@ -3733,6 +4168,8 @@ void UiModel::Impl::OnKeyCancel()
+@@ -3733,6 +4283,8 @@ void UiModel::Impl::OnKeyCancel()
      SetEditMessageActive(false);
    }
  
@@ -7875,7 +8102,7 @@ index d40b779..22a4b46 100644
    Clear(allowUndo);
  }
  
-@@ -4385,14 +4822,24 @@ void UiModel::Impl::AddQuoteFromSelectedMessage(ChatMessage& p_ChatMessage)
+@@ -4385,14 +4937,24 @@ void UiModel::Impl::AddQuoteFromSelectedMessage(ChatMessage& p_ChatMessage)
    const int messageOffset = m_MessageOffset[profileId][chatId];
    const std::unordered_map<std::string, ChatMessage>& messages = m_Messages[profileId][chatId];
  
@@ -7905,7 +8132,7 @@ index d40b779..22a4b46 100644
    if (msg == messages.end())
    {
      LOG_WARNING("error finding selected message content");
-@@ -4571,6 +5018,16 @@ void UiModel::KeyHandler(wint_t p_Key)
+@@ -4571,6 +5133,16 @@ void UiModel::KeyHandler(wint_t p_Key)
    static wint_t keyHome = UiKeyConfig::GetKey("home");
  
    static wint_t keySendMsg = UiKeyConfig::GetKey("send_msg");
@@ -7922,7 +8149,26 @@ index d40b779..22a4b46 100644
    static wint_t keyNextChat = UiKeyConfig::GetKey("next_chat");
    static wint_t keyPrevChat = UiKeyConfig::GetKey("prev_chat");
    static wint_t keyUnreadChat = UiKeyConfig::GetKey("unread_chat");
-@@ -4660,6 +5117,26 @@ void UiModel::KeyHandler(wint_t p_Key)
+@@ -4625,7 +5197,17 @@ void UiModel::KeyHandler(wint_t p_Key)
+   static wint_t keyAutoCompose = UiKeyConfig::GetKey("auto_compose");
+   static wint_t keySelectMention = UiKeyConfig::GetKey("select_mention");
+ 
+-  if (p_Key == keyTerminalResize)
++  static wint_t keyMouse = UiKeyConfig::GetKey("mouse");
++
++  if (p_Key == keyMouse)
++  {
++    int mx = 0, my = 0;
++    unsigned long mstate = 0;
++    UiKeyInput::GetLastMouse(mx, my, mstate);
++    std::unique_lock<owned_mutex> lock(m_ModelMutex);
++    GetImpl().OnMouse(mx, my, mstate);
++  }
++  else if (p_Key == keyTerminalResize)
+   {
+     std::unique_lock<owned_mutex> lock(m_ModelMutex);
+     GetImpl().TerminalResize();
+@@ -4660,6 +5242,26 @@ void UiModel::KeyHandler(wint_t p_Key)
      std::unique_lock<owned_mutex> lock(m_ModelMutex);
      GetImpl().OnKeyToggleEmoji();
    }
@@ -7949,7 +8195,7 @@ index d40b779..22a4b46 100644
    else if (p_Key == keyNextChat)
    {
      std::unique_lock<owned_mutex> lock(m_ModelMutex);
-@@ -4796,8 +5273,15 @@ void UiModel::KeyHandler(wint_t p_Key)
+@@ -4796,8 +5398,15 @@ void UiModel::KeyHandler(wint_t p_Key)
    }
    else if (p_Key == keyCancel)
    {
@@ -7967,7 +8213,7 @@ index d40b779..22a4b46 100644
    }
    else if (p_Key == keyDecreaseListWidth)
    {
-@@ -4852,6 +5336,10 @@ void UiModel::KeyHandler(wint_t p_Key)
+@@ -4852,6 +5461,10 @@ void UiModel::KeyHandler(wint_t p_Key)
    {
      OnKeyAutoCompose();
    }
@@ -7978,7 +8224,7 @@ index d40b779..22a4b46 100644
    else
    {
      std::unique_lock<owned_mutex> lock(m_ModelMutex);
-@@ -5055,6 +5543,60 @@ std::string UiModel::GetContactPhoneLocked(const std::string& p_ProfileId, const
+@@ -5055,6 +5668,72 @@ std::string UiModel::GetContactPhoneLocked(const std::string& p_ProfileId, const
    return GetImpl().GetContactPhone(p_ProfileId, p_ChatId);
  }
  
@@ -7986,6 +8232,18 @@ index d40b779..22a4b46 100644
 +{
 +  nc_assert(m_ModelMutex.owns_lock());
 +  return GetImpl().GetFocusList();
++}
++
++void UiModel::SetListHitsLocked(const std::vector<UiHitRegion>& p_Hits)
++{
++  nc_assert(m_ModelMutex.owns_lock());
++  GetImpl().m_HitList = p_Hits;
++}
++
++void UiModel::SetHistoryHitsLocked(const std::vector<UiHitRegion>& p_Hits)
++{
++  nc_assert(m_ModelMutex.owns_lock());
++  GetImpl().m_HitHistory = p_Hits;
 +}
 +
 +bool UiModel::GetSelectedMessagePreviewLocked(std::string& p_Name, std::string& p_Text, bool* p_Selecting)
@@ -8039,7 +8297,7 @@ index d40b779..22a4b46 100644
  int UiModel::GetCurrentChatIndexLocked()
  {
    nc_assert(m_ModelMutex.owns_lock());
-@@ -5265,7 +5807,9 @@ std::vector<std::string> UiModel::SelectFile()
+@@ -5265,7 +5944,9 @@ std::vector<std::string> UiModel::SelectFile()
      static const bool filePickerPersistDir = UiConfig::GetBool("file_picker_persist_dir");
      if (!filePickerPersistDir || currentDir.empty())
      {
@@ -8050,7 +8308,7 @@ index d40b779..22a4b46 100644
      }
  
      UiDialogParams params(this, "Send File", 0.75, 0.65);
-@@ -5284,9 +5828,18 @@ std::vector<std::string> UiModel::SelectFile()
+@@ -5284,9 +5965,18 @@ std::vector<std::string> UiModel::SelectFile()
  void UiModel::OnKeyTransfer()
  {
    // Pre-req
@@ -8069,7 +8327,7 @@ index d40b779..22a4b46 100644
    }
  
    // Open modal dialog without model mutex held
-@@ -5760,7 +6313,29 @@ void UiModel::OnKeyCopy()
+@@ -5760,7 +6450,29 @@ void UiModel::OnKeyCopy()
  
  void UiModel::OnKeyPaste()
  {
@@ -8100,7 +8358,7 @@ index d40b779..22a4b46 100644
    {
      // Open modal dialog without model mutex held
      static const bool confirmSendPastedImage = UiConfig::GetBool("confirm_send_pasted_image");
-@@ -5774,8 +6349,9 @@ void UiModel::OnKeyPaste()
+@@ -5774,8 +6486,9 @@ void UiModel::OnKeyPaste()
  
      static int index = 0;
      ++index;
@@ -8113,7 +8371,7 @@ index d40b779..22a4b46 100644
        MessageDialog("Warning", "Failed getting clipboard image.", 0.7, 5);
        return;
 diff --git a/src/uimodel.h b/src/uimodel.h
-index 4782732..98c1b64 100644
+index 4782732..4ba648b 100644
 --- a/src/uimodel.h
 +++ b/src/uimodel.h
 @@ -7,6 +7,7 @@
@@ -8124,7 +8382,27 @@ index 4782732..98c1b64 100644
  #include <mutex>
  #include <set>
  #include <stack>
-@@ -46,6 +47,21 @@ private:
+@@ -20,6 +21,19 @@
+ 
+ class UiView;
+ 
++struct UiHitRegion
++{
++  enum Type { Tab = 1, Chat = 2, Bubble = 3, Quote = 4 };
++  int x = 0;
++  int y = 0;
++  int w = 0;
++  int h = 0;
++  int type = 0;
++  int index = 0; // tab index
++  std::string profileId; // chat
++  std::string id; // chat id, or the message id for bubbles and quote cards
++};
++
+ class UiModel
+ {
+ private:
+@@ -46,6 +60,21 @@ private:
      void EntryKeyHandler(wint_t p_Key);
      void SetTyping(const std::string& p_ProfileId, const std::string& p_ChatId, bool p_IsTyping);
  
@@ -8146,12 +8424,17 @@ index 4782732..98c1b64 100644
      void OnKeyNextChat();
      void OnKeyPrevChat();
      void OnKeyUnreadChat();
-@@ -171,7 +187,16 @@ private:
+@@ -171,7 +200,21 @@ private:
      void Cut();
      void Copy();
      void Paste();
 +    void OnKeyReply();
 +    bool GetSelectedAudioPath(std::string& p_Path);
++    void OnMouse(int p_X, int p_Y, unsigned long p_State);
++    void JumpToQuotedOf(const std::string& p_MsgId);
++    void SelectMessageById(const std::string& p_MsgId);
++    std::vector<UiHitRegion> m_HitList; // tabs and chat rows, set by the list view
++    std::vector<UiHitRegion> m_HitHistory; // bubbles and quote cards, set by the history view
 +    bool QuickKeyContext(); // a message is selected, list not focused, prompt empty: single keys act on the message
 +    void QuickReact(int p_Index);
 +    void OnKeyBack();
@@ -8163,7 +8446,7 @@ index 4782732..98c1b64 100644
      bool PreEditMsg(std::string& p_ProfileId, std::string& p_ChatId, std::string& p_MsgId,
                      std::string& p_MsgDialogText);
      void StartEditMsg(const std::string& p_ProfileId, const std::string& p_ChatId, const std::string& p_MsgId);
-@@ -216,6 +241,7 @@ private:
+@@ -216,6 +259,7 @@ private:
      void ResetMessageOffset();
      bool IsCurrentChatSet();
      bool SetCurrentChatIndexIfNotSet();
@@ -8171,7 +8454,7 @@ index 4782732..98c1b64 100644
      void DesktopNotify(const std::string& p_Name, const std::string& p_Text);
      void SetHistoryInteraction(bool p_HistoryInteraction);
      std::string GetSelectedMessageText();
-@@ -252,6 +278,12 @@ private:
+@@ -252,6 +296,12 @@ private:
  
      std::pair<std::string, std::string> m_CurrentChat;
      int m_CurrentChatIndex = -1;
@@ -8184,10 +8467,12 @@ index 4782732..98c1b64 100644
      static const std::pair<std::string, std::string> s_ChatNone;
  
      std::string m_EditMessageId;
-@@ -351,6 +383,15 @@ public:
+@@ -351,6 +401,17 @@ public:
    std::string GetContactNameLocked(const std::string& p_ProfileId, const std::string& p_ChatId);
    std::string GetContactPhoneLocked(const std::string& p_ProfileId, const std::string& p_ChatId);
    int GetCurrentChatIndexLocked();
++  void SetListHitsLocked(const std::vector<UiHitRegion>& p_Hits);
++  void SetHistoryHitsLocked(const std::vector<UiHitRegion>& p_Hits);
 +  bool GetSelectedMessagePreviewLocked(std::string& p_Name, std::string& p_Text, bool* p_Selecting = nullptr);
 +  int GetTabLocked();
 +  int GetTabCountLocked();
