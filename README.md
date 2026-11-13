@@ -11,7 +11,7 @@ All your chats in one terminal, one tab per service. A patched [nchat](https://g
 - **Replies**: `m` / `Ctrl+M` on a selected message quotes it, quotes show as an inset card.
 - **Paste images** (`Ctrl+V`), **attach files** (`Ctrl+T`, with an upload spinner / progress bar), emoji picker with *recent* and categories, sound on new messages.
 - Rounded dialogs and bubbles, date separators, last-activity times in the contact list, prompt with hint, muted metadata.
-- Colors come from your terminal theme (ANSI colors only). WhatsApp green, Telegram blue, Signal cyan, Matrix purple.
+- Colors come from your terminal theme (ANSI colors only). WhatsApp green, Telegram blue, Signal cyan.
 
 ## Install
 
@@ -35,8 +35,6 @@ Config stays in `~/.config/nchat`. Existing `key.conf` / `color.conf` keep old v
 | `scripts/preview.sh` | full-screen preview for images, webp, short videos/GIFs |
 | `scripts/piazza` | launcher |
 | `config/kitty.conf.snippet` | Shift+Enter / Ctrl+M mappings |
-
-**Matrix:** the tab and its purple color are ready, but nchat has no Matrix protocol plugin yet, so a Matrix tab only appears once a `Matrix` profile exists.
 
 See [docs/KEYS.md](docs/KEYS.md) for keys. nchat is MIT licensed (see `nchat/LICENSE`).
 

@@ -4829,7 +4829,7 @@ index 0000000..59a9ae8
 +bool Poll(); // reap a finished player; true when playback just ended
 +}
 diff --git a/src/uicolorconfig.cpp b/src/uicolorconfig.cpp
-index 5dadae9..69afbd8 100644
+index 5dadae9..79ec55b 100644
 --- a/src/uicolorconfig.cpp
 +++ b/src/uicolorconfig.cpp
 @@ -27,70 +27,101 @@ void UiColorConfig::Init()
@@ -4856,8 +4856,8 @@ index 5dadae9..69afbd8 100644
 -    { "help_color_bg", "black" },
 -    { "help_color_fg", "white" },
 +    { "help_attr", "" },
-+    { "help_color_bg", "" },
-+    { "help_color_fg", slate },
++    { "help_color_bg", slate },
++    { "help_color_fg", dark },
      { "entry_attr", "" },
      { "entry_color_bg", "" },
      { "entry_color_fg", "" },
@@ -6460,7 +6460,7 @@ index f5af738..2087136 100644
      m_Result = false;
      m_Running = false;
 diff --git a/src/uimodel.cpp b/src/uimodel.cpp
-index d40b779..68fc366 100644
+index d40b779..4c8c9e0 100644
 --- a/src/uimodel.cpp
 +++ b/src/uimodel.cpp
 @@ -8,6 +8,7 @@
@@ -6604,7 +6604,7 @@ index d40b779..68fc366 100644
    if (p_Key == keyUp)
    {
      if (GetSelectMessageActive() && !GetEditMessageActive())
-@@ -545,6 +632,167 @@ void UiModel::Impl::SetTyping(const std::string& p_ProfileId, const std::string&
+@@ -545,6 +632,166 @@ void UiModel::Impl::SetTyping(const std::string& p_ProfileId, const std::string&
    }
  }
  
@@ -6620,11 +6620,10 @@ index d40b779..68fc366 100644
 +  if (p_Protocol.rfind("WhatsApp", 0) == 0) return 0;
 +  if (p_Protocol.rfind("Telegram", 0) == 0) return 1;
 +  if (p_Protocol.rfind("Signal", 0) == 0) return 2;
-+  if (p_Protocol.rfind("Matrix", 0) == 0) return 3;
-+  return 4;
++  return 3;
 +}
 +
-+// Tab list = protocols that have chats, ordered WhatsApp, Telegram, Signal, Matrix, then the rest alphabetically
++// Tab list = protocols that have chats, ordered WhatsApp, Telegram, Signal, then the rest alphabetically
 +void UiModel::Impl::RefreshTabs()
 +{
 +  std::set<std::string> protocols;
@@ -6663,15 +6662,15 @@ index d40b779..68fc366 100644
 +  return name;
 +}
 +
-+// WhatsApp = 0 (green), Telegram = 1 (blue), Signal = 2 (cyan), Matrix = 3 (purple), others spread over 4..5
++// WhatsApp = 0 (green), Telegram = 1 (blue), Signal = 2 (cyan), others spread over 3..5
 +int UiModel::Impl::GetTabKind(int p_Tab)
 +{
 +  RefreshTabs();
 +  if ((p_Tab < 0) || (p_Tab >= (int)m_Tabs.size())) return 0;
 +  const std::string& protocol = m_Tabs.at(p_Tab);
 +  const int priority = TabPriority(protocol);
-+  if (priority < 4) return priority;
-+  return 4 + (int)(std::hash<std::string>()(protocol) % 2);
++  if (priority < 3) return priority;
++  return 3 + (int)(std::hash<std::string>()(protocol) % 3);
 +}
 +
 +int UiModel::Impl::GetProfileKind(const std::string& p_ProfileId)
@@ -6772,7 +6771,7 @@ index d40b779..68fc366 100644
  void UiModel::Impl::OnKeyNextChat()
  {
    AnyUserKeyInput();
-@@ -553,12 +801,10 @@ void UiModel::Impl::OnKeyNextChat()
+@@ -553,12 +800,10 @@ void UiModel::Impl::OnKeyNextChat()
  
    if (m_ChatVec.empty()) return;
  
@@ -6788,7 +6787,7 @@ index d40b779..68fc366 100644
    m_CurrentChat = m_ChatVec.at(m_CurrentChatIndex);
    OnCurrentChatChanged();
    SetSelectMessageActive(false);
-@@ -572,12 +818,10 @@ void UiModel::Impl::OnKeyPrevChat()
+@@ -572,12 +817,10 @@ void UiModel::Impl::OnKeyPrevChat()
  
    if (m_ChatVec.empty()) return;
  
@@ -6804,7 +6803,7 @@ index d40b779..68fc366 100644
    m_CurrentChat = m_ChatVec.at(m_CurrentChatIndex);
    OnCurrentChatChanged();
    SetSelectMessageActive(false);
-@@ -598,7 +842,7 @@ void UiModel::Impl::OnKeyUnreadChat()
+@@ -598,7 +841,7 @@ void UiModel::Impl::OnKeyUnreadChat()
    {
      const std::pair<std::string, std::string>& chat = m_ChatVec.at(i);
      const bool isUnread = GetChatIsUnread(chat.first, chat.second);
@@ -6813,7 +6812,7 @@ index d40b779..68fc366 100644
      {
        unreadVec.push_back(i);
        if (m_CurrentChatIndex == (int)i)
-@@ -1348,6 +1592,9 @@ void UiModel::Impl::TransferFile(const std::vector<std::string>& p_FilePaths)
+@@ -1348,6 +1591,9 @@ void UiModel::Impl::TransferFile(const std::vector<std::string>& p_FilePaths)
        FileInfo fileInfo;
        fileInfo.filePath = filePath;
        fileInfo.fileType = FileUtil::GetMimeType(filePath);
@@ -6823,7 +6822,7 @@ index d40b779..68fc366 100644
  
        std::shared_ptr<SendMessageRequest> sendMessageRequest =
          std::make_shared<SendMessageRequest>();
-@@ -1372,13 +1619,14 @@ void UiModel::Impl::TransferFile(const std::vector<std::string>& p_FilePaths)
+@@ -1372,13 +1618,14 @@ void UiModel::Impl::TransferFile(const std::vector<std::string>& p_FilePaths)
          }
        }
  
@@ -6839,7 +6838,7 @@ index d40b779..68fc366 100644
          }
        }
  
-@@ -1860,7 +2108,12 @@ void UiModel::Impl::MessageHandler(std::shared_ptr<ServiceMessage> p_ServiceMess
+@@ -1860,7 +2107,12 @@ void UiModel::Impl::MessageHandler(std::shared_ptr<ServiceMessage> p_ServiceMess
        {
          std::shared_ptr<SendMessageNotify> sendMessageNotify = std::static_pointer_cast<SendMessageNotify>(
            p_ServiceMessage);
@@ -6853,7 +6852,7 @@ index d40b779..68fc366 100644
        }
        break;
  
-@@ -2497,12 +2750,7 @@ void UiModel::Impl::SortChats()
+@@ -2497,12 +2749,7 @@ void UiModel::Impl::SortChats()
  
    if (!m_ChatVec.empty())
    {
@@ -6867,7 +6866,7 @@ index d40b779..68fc366 100644
      {
        for (size_t i = 0; i < m_ChatVec.size(); ++i)
        {
-@@ -2615,6 +2863,8 @@ void UiModel::Impl::UpdateChatInfoIsUnread(const std::string& p_ProfileId, const
+@@ -2615,6 +2862,8 @@ void UiModel::Impl::UpdateChatInfoIsUnread(const std::string& p_ProfileId, const
              m_TriggerTerminalBell = true;
            }
  
@@ -6876,7 +6875,7 @@ index d40b779..68fc366 100644
            bool desktopNotify = false;
            if (m_TerminalActive)
            {
-@@ -3258,15 +3508,11 @@ bool UiModel::Impl::IsCurrentChatSet()
+@@ -3258,15 +3507,11 @@ bool UiModel::Impl::IsCurrentChatSet()
    return (m_CurrentChatIndex >= 0);
  }
  
@@ -6895,7 +6894,7 @@ index d40b779..68fc366 100644
  }
  
  void UiModel::Impl::SetTerminalActive(bool p_TerminalActive)
-@@ -3293,6 +3539,36 @@ void UiModel::Impl::SetTerminalActive(bool p_TerminalActive)
+@@ -3293,6 +3538,36 @@ void UiModel::Impl::SetTerminalActive(bool p_TerminalActive)
    }
  }
  
@@ -6932,7 +6931,7 @@ index d40b779..68fc366 100644
  void UiModel::Impl::DesktopNotify(const std::string& p_Name, const std::string& p_Text)
  {
    static const bool desktopNotifyEnabled = UiConfig::GetBool("desktop_notify_enabled");
-@@ -3723,6 +3999,138 @@ void UiModel::Impl::SaveEditMessage()
+@@ -3723,6 +3998,138 @@ void UiModel::Impl::SaveEditMessage()
    Clear(false /*p_AllowUndo*/);
  }
  
@@ -7071,7 +7070,7 @@ index d40b779..68fc366 100644
  void UiModel::Impl::OnKeyCancel()
  {
    AnyUserKeyInput();
-@@ -3733,6 +4141,8 @@ void UiModel::Impl::OnKeyCancel()
+@@ -3733,6 +4140,8 @@ void UiModel::Impl::OnKeyCancel()
      SetEditMessageActive(false);
    }
  
@@ -7080,7 +7079,7 @@ index d40b779..68fc366 100644
    Clear(allowUndo);
  }
  
-@@ -4385,14 +4795,24 @@ void UiModel::Impl::AddQuoteFromSelectedMessage(ChatMessage& p_ChatMessage)
+@@ -4385,14 +4794,24 @@ void UiModel::Impl::AddQuoteFromSelectedMessage(ChatMessage& p_ChatMessage)
    const int messageOffset = m_MessageOffset[profileId][chatId];
    const std::unordered_map<std::string, ChatMessage>& messages = m_Messages[profileId][chatId];
  
@@ -7110,7 +7109,7 @@ index d40b779..68fc366 100644
    if (msg == messages.end())
    {
      LOG_WARNING("error finding selected message content");
-@@ -4571,6 +4991,16 @@ void UiModel::KeyHandler(wint_t p_Key)
+@@ -4571,6 +4990,16 @@ void UiModel::KeyHandler(wint_t p_Key)
    static wint_t keyHome = UiKeyConfig::GetKey("home");
  
    static wint_t keySendMsg = UiKeyConfig::GetKey("send_msg");
@@ -7127,7 +7126,7 @@ index d40b779..68fc366 100644
    static wint_t keyNextChat = UiKeyConfig::GetKey("next_chat");
    static wint_t keyPrevChat = UiKeyConfig::GetKey("prev_chat");
    static wint_t keyUnreadChat = UiKeyConfig::GetKey("unread_chat");
-@@ -4660,6 +5090,26 @@ void UiModel::KeyHandler(wint_t p_Key)
+@@ -4660,6 +5089,26 @@ void UiModel::KeyHandler(wint_t p_Key)
      std::unique_lock<owned_mutex> lock(m_ModelMutex);
      GetImpl().OnKeyToggleEmoji();
    }
@@ -7154,7 +7153,7 @@ index d40b779..68fc366 100644
    else if (p_Key == keyNextChat)
    {
      std::unique_lock<owned_mutex> lock(m_ModelMutex);
-@@ -4796,8 +5246,15 @@ void UiModel::KeyHandler(wint_t p_Key)
+@@ -4796,8 +5245,15 @@ void UiModel::KeyHandler(wint_t p_Key)
    }
    else if (p_Key == keyCancel)
    {
@@ -7172,7 +7171,7 @@ index d40b779..68fc366 100644
    }
    else if (p_Key == keyDecreaseListWidth)
    {
-@@ -5055,6 +5512,60 @@ std::string UiModel::GetContactPhoneLocked(const std::string& p_ProfileId, const
+@@ -5055,6 +5511,60 @@ std::string UiModel::GetContactPhoneLocked(const std::string& p_ProfileId, const
    return GetImpl().GetContactPhone(p_ProfileId, p_ChatId);
  }
  
@@ -7233,7 +7232,7 @@ index d40b779..68fc366 100644
  int UiModel::GetCurrentChatIndexLocked()
  {
    nc_assert(m_ModelMutex.owns_lock());
-@@ -5265,7 +5776,9 @@ std::vector<std::string> UiModel::SelectFile()
+@@ -5265,7 +5775,9 @@ std::vector<std::string> UiModel::SelectFile()
      static const bool filePickerPersistDir = UiConfig::GetBool("file_picker_persist_dir");
      if (!filePickerPersistDir || currentDir.empty())
      {
@@ -7244,7 +7243,7 @@ index d40b779..68fc366 100644
      }
  
      UiDialogParams params(this, "Send File", 0.75, 0.65);
-@@ -5284,9 +5797,18 @@ std::vector<std::string> UiModel::SelectFile()
+@@ -5284,9 +5796,18 @@ std::vector<std::string> UiModel::SelectFile()
  void UiModel::OnKeyTransfer()
  {
    // Pre-req
@@ -7263,7 +7262,7 @@ index d40b779..68fc366 100644
    }
  
    // Open modal dialog without model mutex held
-@@ -5760,7 +6282,29 @@ void UiModel::OnKeyCopy()
+@@ -5760,7 +6281,29 @@ void UiModel::OnKeyCopy()
  
  void UiModel::OnKeyPaste()
  {
@@ -7294,7 +7293,7 @@ index d40b779..68fc366 100644
    {
      // Open modal dialog without model mutex held
      static const bool confirmSendPastedImage = UiConfig::GetBool("confirm_send_pasted_image");
-@@ -5774,8 +6318,9 @@ void UiModel::OnKeyPaste()
+@@ -5774,8 +6317,9 @@ void UiModel::OnKeyPaste()
  
      static int index = 0;
      ++index;
