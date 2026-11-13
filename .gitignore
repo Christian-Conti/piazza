@@ -12,3 +12,53 @@ nchat/.piazza-applied
 .DS_Store
 .idea/
 .vscode/
+
+# python
+__pycache__/
+*.pyc
+
+# personal / account data: nchat keeps these in ~/.config/nchat, but never commit them if they land here
+.config/
+profiles/
+history/
+*.db
+*.sqlite
+*.sqlite3
+*.session
+*.log
+*.log.*
+*.err
+debug.info
+app.conf
+ui.conf
+key.conf
+color.conf
+temp/
+downloads/
+attachments/
+
+# secrets
+.env
+.env.*
+*.key
+*.pem
+*.p12
+id_rsa*
+*token*
+*secret*
+credentials*
+
+# local tooling / assistants / screenshots
+.claude/
+CLAUDE.md
+graphify-out/
+Screenshot*
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.mp4
+*.f4v
+*.webm
+*.ogg
+*.opus
