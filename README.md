@@ -8,7 +8,7 @@ All your chats in one terminal, one tab per service. A patched [nchat](https://g
 - **Messaging-app layout**: full-height contact column, chat title, rounded colored bubbles (sent on the right).
 - **Inline images, stickers, GIFs** via the kitty graphics protocol; `Enter` enlarges, short videos/GIFs loop in the terminal.
 - **Replies**: `m` / `Ctrl+M` on a selected message quotes it, quotes show as an inset card.
-- **Paste images** (`Ctrl+V`), **attach files** (`Ctrl+T`), emoji picker with *recent* and categories, sound on new messages.
+- **Paste images** (`Ctrl+V`), **attach files** (`Ctrl+T`, with an upload spinner / progress bar), emoji picker with *recent* and categories, sound on new messages.
 - Colors come from your terminal theme (ANSI colors only).
 
 ## Install

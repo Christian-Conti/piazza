@@ -11,6 +11,42 @@ index dd01aef..d05f7a6 100644
    src/uilistborderview.cpp
    src/uilistborderview.h
    src/uilistdialog.cpp
+diff --git a/lib/duchat/src/duchat.cpp b/lib/duchat/src/duchat.cpp
+index c0de985..be58962 100644
+--- a/lib/duchat/src/duchat.cpp
++++ b/lib/duchat/src/duchat.cpp
+@@ -7,6 +7,10 @@
+ 
+ #include "duchat.h"
+ 
++#include "uploadprogress.h"
++
++#include "protocolutil.h"
++
+ #include <algorithm>
+ #include <iostream>
+ #include <map>
+@@ -403,6 +407,7 @@ void DuChat::PerformRequest(std::shared_ptr<RequestMessage> p_RequestMessage)
+         std::shared_ptr<SendMessageNotify> sendMessageNotify =
+           std::make_shared<SendMessageNotify>(m_ProfileId);
+         sendMessageNotify->success = true;
++        UploadProgress::Done(ProtocolUtil::FileInfoFromHex(sendMessageRequest->chatMessage.fileInfo).filePath);
+         sendMessageNotify->chatId = sendMessageRequest->chatId;
+         sendMessageNotify->chatMessage = sendMessageRequest->chatMessage;
+         m_MessageHandler(sendMessageNotify);
+diff --git a/lib/ncutil/CMakeLists.txt b/lib/ncutil/CMakeLists.txt
+index ade7523..b2922cf 100644
+--- a/lib/ncutil/CMakeLists.txt
++++ b/lib/ncutil/CMakeLists.txt
+@@ -79,6 +79,8 @@ add_library(ncutil ${LIBRARY_LINKING_TYPE}
+   src/sqlitehelp.h
+   src/status.cpp
+   src/status.h
++  src/uploadprogress.cpp
++  src/uploadprogress.h
+   src/strutil.cpp
+   src/strutil.h
+   src/sysutil.cpp
 diff --git a/lib/ncutil/src/apputil.cpp b/lib/ncutil/src/apputil.cpp
 index acd190c..7fca9a3 100644
 --- a/lib/ncutil/src/apputil.cpp
@@ -4156,11 +4192,122 @@ index 0000000..8ea6505
 +  { "🏴󠁧󠁢󠁳󠁣󠁴󠁿", 8 },
 +  { "🏴󠁧󠁢󠁷󠁬󠁳󠁿", 8 },
 +};
+diff --git a/lib/ncutil/src/uploadprogress.cpp b/lib/ncutil/src/uploadprogress.cpp
+new file mode 100644
+index 0000000..fc80226
+--- /dev/null
++++ b/lib/ncutil/src/uploadprogress.cpp
+@@ -0,0 +1,64 @@
++// uploadprogress.cpp
++
++#include "uploadprogress.h"
++
++#include <sys/stat.h>
++
++#include <algorithm>
++#include <mutex>
++
++#include "timeutil.h"
++
++static std::mutex s_Mutex;
++static std::vector<UploadProgress::Item> s_Items;
++
++void UploadProgress::Start(const std::string& p_Path)
++{
++  std::unique_lock<std::mutex> lock(s_Mutex);
++  Item item;
++  item.path = p_Path;
++  item.startMs = TimeUtil::GetCurrentTimeMSec();
++  struct stat st;
++  if (stat(p_Path.c_str(), &st) == 0) item.size = st.st_size;
++  s_Items.push_back(item);
++}
++
++// Matches by path; tdlib may report a copy of the file, so fall back to the file size.
++void UploadProgress::Update(const std::string& p_Path, int64_t p_Uploaded, int64_t p_Total, bool p_Completed)
++{
++  std::unique_lock<std::mutex> lock(s_Mutex);
++  auto it = std::find_if(s_Items.begin(), s_Items.end(), [&](const Item& i) { return i.path == p_Path; });
++  if (it == s_Items.end())
++  {
++    it = std::find_if(s_Items.begin(), s_Items.end(), [&](const Item& i) { return (i.size > 0) && (i.size == p_Total); });
++  }
++
++  if (it == s_Items.end()) return;
++
++  if (p_Completed)
++  {
++    s_Items.erase(it);
++    return;
++  }
++
++  it->uploaded = p_Uploaded;
++  it->total = p_Total;
++}
++
++void UploadProgress::Done(const std::string& p_Path)
++{
++  std::unique_lock<std::mutex> lock(s_Mutex);
++  s_Items.erase(std::remove_if(s_Items.begin(), s_Items.end(), [&](const Item& i) { return i.path == p_Path; }),
++                s_Items.end());
++}
++
++std::vector<UploadProgress::Item> UploadProgress::Snapshot()
++{
++  std::unique_lock<std::mutex> lock(s_Mutex);
++  // safety net: forget transfers older than 30 minutes (e.g. a protocol that never reports back)
++  const int64_t now = TimeUtil::GetCurrentTimeMSec();
++  s_Items.erase(std::remove_if(s_Items.begin(), s_Items.end(),
++                               [&](const Item& i) { return (now - i.startMs) > (30 * 60 * 1000); }),
++                s_Items.end());
++  return s_Items;
++}
+diff --git a/lib/ncutil/src/uploadprogress.h b/lib/ncutil/src/uploadprogress.h
+new file mode 100644
+index 0000000..bd4f40c
+--- /dev/null
++++ b/lib/ncutil/src/uploadprogress.h
+@@ -0,0 +1,27 @@
++// uploadprogress.h
++//
++// Registry of files being sent, so the UI can show a spinner / progress bar while the protocol uploads.
++
++#pragma once
++
++#include <cstdint>
++#include <string>
++#include <vector>
++
++class UploadProgress
++{
++public:
++  struct Item
++  {
++    std::string path;
++    int64_t startMs = 0;
++    int64_t size = 0; // file size on disk
++    int64_t uploaded = 0; // bytes uploaded, only if the protocol reports progress
++    int64_t total = 0; // 0 = protocol reports no progress (indeterminate)
++  };
++
++  static void Start(const std::string& p_Path);
++  static void Update(const std::string& p_Path, int64_t p_Uploaded, int64_t p_Total, bool p_Completed);
++  static void Done(const std::string& p_Path);
++  static std::vector<Item> Snapshot();
++};
 diff --git a/lib/tgchat/src/tgchat.cpp b/lib/tgchat/src/tgchat.cpp
-index 2926fe0..bdc57cf 100644
+index 2926fe0..3f81ba5 100644
 --- a/lib/tgchat/src/tgchat.cpp
 +++ b/lib/tgchat/src/tgchat.cpp
-@@ -1010,7 +1010,17 @@ void TgChat::Impl::PerformRequest(std::shared_ptr<RequestMessage> p_RequestMessa
+@@ -38,6 +38,7 @@
+ #include "protocolutil.h"
+ #include "qrutil.h"
+ #include "status.h"
++#include "uploadprogress.h"
+ #include "strutil.h"
+ #include "timeutil.h"
+ 
+@@ -1010,7 +1011,18 @@ void TgChat::Impl::PerformRequest(std::shared_ptr<RequestMessage> p_RequestMessa
          {
            Status::Clear(m_ProfileId, Status::FlagSending);
  
@@ -4169,6 +4316,7 @@ index 2926fe0..bdc57cf 100644
 +          {
 +            auto& error = static_cast<td::td_api::error&>(*object);
 +            LOG_WARNING("send message failed: %d %s", (int)error.code_, error.message_.c_str());
++            UploadProgress::Done(ProtocolUtil::FileInfoFromHex(sendMessageRequest->chatMessage.fileInfo).filePath);
 +            std::shared_ptr<SendMessageNotify> failedNotify = std::make_shared<SendMessageNotify>(m_ProfileId);
 +            failedNotify->success = false;
 +            failedNotify->chatId = sendMessageRequest->chatId;
@@ -4179,6 +4327,44 @@ index 2926fe0..bdc57cf 100644
  
            std::shared_ptr<SendMessageNotify> sendMessageNotify =
              std::make_shared<SendMessageNotify>(m_ProfileId);
+@@ -2352,9 +2364,16 @@ void TgChat::Impl::ProcessUpdate(td::td_api::object_ptr<td::td_api::Object> upda
+   {
+     LOG_TRACE("update saved animations");
+   },
+-  [](td::td_api::updateFile&)
++  [](td::td_api::updateFile& update_file)
+   {
+     LOG_TRACE("update file");
++    const auto& file = update_file.file_;
++    if (file && file->remote_ && file->local_ && (file->remote_->is_uploading_active_ || file->remote_->is_uploading_completed_))
++    {
++      const int64_t total = file->size_ ? file->size_ : file->expected_size_;
++      UploadProgress::Update(file->local_->path_, file->remote_->uploaded_size_, total,
++                             file->remote_->is_uploading_completed_);
++    }
+   },
+   [](auto& anyupdate)
+   {
+diff --git a/lib/wmchat/src/wmchat.cpp b/lib/wmchat/src/wmchat.cpp
+index ec95181..41a2222 100644
+--- a/lib/wmchat/src/wmchat.cpp
++++ b/lib/wmchat/src/wmchat.cpp
+@@ -19,6 +19,7 @@
+ #include "protocolutil.h"
+ #include "setuputil.h"
+ #include "status.h"
++#include "uploadprogress.h"
+ #include "strutil.h"
+ #include "timeutil.h"
+ 
+@@ -411,6 +412,7 @@ void WmChat::PerformRequest(std::shared_ptr<RequestMessage> p_RequestMessage)
+                          const_cast<char*>(fileType.c_str()), const_cast<char*>(editMsgId.c_str()),
+                          editMsgSent, const_cast<char*>(mentionsJson.c_str()));
+         Status::Clear(m_ProfileId, Status::FlagSending);
++        UploadProgress::Done(filePath); // WhatsApp sends synchronously: upload and send are finished here
+ 
+         std::shared_ptr<SendMessageNotify> sendMessageNotify = std::make_shared<SendMessageNotify>(m_ProfileId);
+         sendMessageNotify->success = (rv == 0);
 diff --git a/src/main.cpp b/src/main.cpp
 index f8d47c3..ace3be3 100644
 --- a/src/main.cpp
@@ -5508,7 +5694,7 @@ index f5af738..2087136 100644
      m_Result = false;
      m_Running = false;
 diff --git a/src/uimodel.cpp b/src/uimodel.cpp
-index d40b779..da14bf4 100644
+index d40b779..f1a3d0a 100644
 --- a/src/uimodel.cpp
 +++ b/src/uimodel.cpp
 @@ -8,6 +8,7 @@
@@ -5519,16 +5705,18 @@ index d40b779..da14bf4 100644
  
  #include <ncurses.h>
  #include <sys/ioctl.h>
-@@ -16,6 +17,8 @@
+@@ -16,7 +17,10 @@
  #include "appconfig.h"
  #include "messagecache.h"
  #include "apputil.h"
 +#include <fstream>
 +
  #include "clipboard.h"
++#include "uploadprogress.h"
  #include "composescript.h"
  #include "fileutil.h"
-@@ -171,17 +174,37 @@ void UiModel::Impl::OnKeySendMsg()
+ #include "log.h"
+@@ -171,17 +175,37 @@ void UiModel::Impl::OnKeySendMsg()
    if (editMessageActive)
    {
      SaveEditMessage();
@@ -5568,7 +5756,7 @@ index d40b779..da14bf4 100644
    std::wstring& entryStr = m_EntryStr[profileId][chatId];
    int& entryPos = m_EntryPos[profileId][chatId];
  
-@@ -193,10 +216,11 @@ void UiModel::Impl::SendMessage()
+@@ -193,10 +217,11 @@ void UiModel::Impl::SendMessage()
    sendMessageRequest->chatMessage.mentions = ParseMentions(profileId, chatId,
                                                             sendMessageRequest->chatMessage.text);
  
@@ -5581,7 +5769,7 @@ index d40b779..da14bf4 100644
    }
  
    SendProtocolRequest(profileId, sendMessageRequest);
-@@ -247,6 +271,49 @@ void UiModel::Impl::EntryKeyHandler(wint_t p_Key)
+@@ -247,6 +272,49 @@ void UiModel::Impl::EntryKeyHandler(wint_t p_Key)
    const int messageCount = m_Messages[profileId][chatId].size();
    int& messageOffset = m_MessageOffset[profileId][chatId];
  
@@ -5631,7 +5819,7 @@ index d40b779..da14bf4 100644
    if (p_Key == keyUp)
    {
      if (GetSelectMessageActive() && !GetEditMessageActive())
-@@ -545,6 +612,166 @@ void UiModel::Impl::SetTyping(const std::string& p_ProfileId, const std::string&
+@@ -545,6 +613,166 @@ void UiModel::Impl::SetTyping(const std::string& p_ProfileId, const std::string&
    }
  }
  
@@ -5798,7 +5986,7 @@ index d40b779..da14bf4 100644
  void UiModel::Impl::OnKeyNextChat()
  {
    AnyUserKeyInput();
-@@ -553,12 +780,10 @@ void UiModel::Impl::OnKeyNextChat()
+@@ -553,12 +781,10 @@ void UiModel::Impl::OnKeyNextChat()
  
    if (m_ChatVec.empty()) return;
  
@@ -5814,7 +6002,7 @@ index d40b779..da14bf4 100644
    m_CurrentChat = m_ChatVec.at(m_CurrentChatIndex);
    OnCurrentChatChanged();
    SetSelectMessageActive(false);
-@@ -572,12 +797,10 @@ void UiModel::Impl::OnKeyPrevChat()
+@@ -572,12 +798,10 @@ void UiModel::Impl::OnKeyPrevChat()
  
    if (m_ChatVec.empty()) return;
  
@@ -5830,7 +6018,7 @@ index d40b779..da14bf4 100644
    m_CurrentChat = m_ChatVec.at(m_CurrentChatIndex);
    OnCurrentChatChanged();
    SetSelectMessageActive(false);
-@@ -598,7 +821,7 @@ void UiModel::Impl::OnKeyUnreadChat()
+@@ -598,7 +822,7 @@ void UiModel::Impl::OnKeyUnreadChat()
    {
      const std::pair<std::string, std::string>& chat = m_ChatVec.at(i);
      const bool isUnread = GetChatIsUnread(chat.first, chat.second);
@@ -5839,16 +6027,17 @@ index d40b779..da14bf4 100644
      {
        unreadVec.push_back(i);
        if (m_CurrentChatIndex == (int)i)
-@@ -1348,6 +1571,8 @@ void UiModel::Impl::TransferFile(const std::vector<std::string>& p_FilePaths)
+@@ -1348,6 +1572,9 @@ void UiModel::Impl::TransferFile(const std::vector<std::string>& p_FilePaths)
        FileInfo fileInfo;
        fileInfo.filePath = filePath;
        fileInfo.fileType = FileUtil::GetMimeType(filePath);
 +      LOG_INFO("send file %s (%s) to %s %s", filePath.c_str(), fileInfo.fileType.c_str(), profileId.c_str(),
 +               chatId.c_str());
++      UploadProgress::Start(filePath); // shown as spinner / progress bar until the protocol reports back
  
        std::shared_ptr<SendMessageRequest> sendMessageRequest =
          std::make_shared<SendMessageRequest>();
-@@ -1372,13 +1597,14 @@ void UiModel::Impl::TransferFile(const std::vector<std::string>& p_FilePaths)
+@@ -1372,13 +1599,14 @@ void UiModel::Impl::TransferFile(const std::vector<std::string>& p_FilePaths)
          }
        }
  
@@ -5864,7 +6053,7 @@ index d40b779..da14bf4 100644
          }
        }
  
-@@ -1860,7 +2086,12 @@ void UiModel::Impl::MessageHandler(std::shared_ptr<ServiceMessage> p_ServiceMess
+@@ -1860,7 +2088,12 @@ void UiModel::Impl::MessageHandler(std::shared_ptr<ServiceMessage> p_ServiceMess
        {
          std::shared_ptr<SendMessageNotify> sendMessageNotify = std::static_pointer_cast<SendMessageNotify>(
            p_ServiceMessage);
@@ -5878,7 +6067,7 @@ index d40b779..da14bf4 100644
        }
        break;
  
-@@ -2497,12 +2728,7 @@ void UiModel::Impl::SortChats()
+@@ -2497,12 +2730,7 @@ void UiModel::Impl::SortChats()
  
    if (!m_ChatVec.empty())
    {
@@ -5892,7 +6081,7 @@ index d40b779..da14bf4 100644
      {
        for (size_t i = 0; i < m_ChatVec.size(); ++i)
        {
-@@ -2615,6 +2841,8 @@ void UiModel::Impl::UpdateChatInfoIsUnread(const std::string& p_ProfileId, const
+@@ -2615,6 +2843,8 @@ void UiModel::Impl::UpdateChatInfoIsUnread(const std::string& p_ProfileId, const
              m_TriggerTerminalBell = true;
            }
  
@@ -5901,7 +6090,7 @@ index d40b779..da14bf4 100644
            bool desktopNotify = false;
            if (m_TerminalActive)
            {
-@@ -3258,15 +3486,11 @@ bool UiModel::Impl::IsCurrentChatSet()
+@@ -3258,15 +3488,11 @@ bool UiModel::Impl::IsCurrentChatSet()
    return (m_CurrentChatIndex >= 0);
  }
  
@@ -5920,7 +6109,7 @@ index d40b779..da14bf4 100644
  }
  
  void UiModel::Impl::SetTerminalActive(bool p_TerminalActive)
-@@ -3293,6 +3517,36 @@ void UiModel::Impl::SetTerminalActive(bool p_TerminalActive)
+@@ -3293,6 +3519,36 @@ void UiModel::Impl::SetTerminalActive(bool p_TerminalActive)
    }
  }
  
@@ -5957,7 +6146,7 @@ index d40b779..da14bf4 100644
  void UiModel::Impl::DesktopNotify(const std::string& p_Name, const std::string& p_Text)
  {
    static const bool desktopNotifyEnabled = UiConfig::GetBool("desktop_notify_enabled");
-@@ -3723,6 +3977,114 @@ void UiModel::Impl::SaveEditMessage()
+@@ -3723,6 +3979,114 @@ void UiModel::Impl::SaveEditMessage()
    Clear(false /*p_AllowUndo*/);
  }
  
@@ -6072,7 +6261,7 @@ index d40b779..da14bf4 100644
  void UiModel::Impl::OnKeyCancel()
  {
    AnyUserKeyInput();
-@@ -3733,6 +4095,8 @@ void UiModel::Impl::OnKeyCancel()
+@@ -3733,6 +4097,8 @@ void UiModel::Impl::OnKeyCancel()
      SetEditMessageActive(false);
    }
  
@@ -6081,7 +6270,7 @@ index d40b779..da14bf4 100644
    Clear(allowUndo);
  }
  
-@@ -4385,14 +4749,24 @@ void UiModel::Impl::AddQuoteFromSelectedMessage(ChatMessage& p_ChatMessage)
+@@ -4385,14 +4751,24 @@ void UiModel::Impl::AddQuoteFromSelectedMessage(ChatMessage& p_ChatMessage)
    const int messageOffset = m_MessageOffset[profileId][chatId];
    const std::unordered_map<std::string, ChatMessage>& messages = m_Messages[profileId][chatId];
  
@@ -6111,7 +6300,7 @@ index d40b779..da14bf4 100644
    if (msg == messages.end())
    {
      LOG_WARNING("error finding selected message content");
-@@ -4571,6 +4945,16 @@ void UiModel::KeyHandler(wint_t p_Key)
+@@ -4571,6 +4947,16 @@ void UiModel::KeyHandler(wint_t p_Key)
    static wint_t keyHome = UiKeyConfig::GetKey("home");
  
    static wint_t keySendMsg = UiKeyConfig::GetKey("send_msg");
@@ -6128,7 +6317,7 @@ index d40b779..da14bf4 100644
    static wint_t keyNextChat = UiKeyConfig::GetKey("next_chat");
    static wint_t keyPrevChat = UiKeyConfig::GetKey("prev_chat");
    static wint_t keyUnreadChat = UiKeyConfig::GetKey("unread_chat");
-@@ -4660,6 +5044,26 @@ void UiModel::KeyHandler(wint_t p_Key)
+@@ -4660,6 +5046,26 @@ void UiModel::KeyHandler(wint_t p_Key)
      std::unique_lock<owned_mutex> lock(m_ModelMutex);
      GetImpl().OnKeyToggleEmoji();
    }
@@ -6155,7 +6344,7 @@ index d40b779..da14bf4 100644
    else if (p_Key == keyNextChat)
    {
      std::unique_lock<owned_mutex> lock(m_ModelMutex);
-@@ -4796,8 +5200,15 @@ void UiModel::KeyHandler(wint_t p_Key)
+@@ -4796,8 +5202,15 @@ void UiModel::KeyHandler(wint_t p_Key)
    }
    else if (p_Key == keyCancel)
    {
@@ -6173,7 +6362,7 @@ index d40b779..da14bf4 100644
    }
    else if (p_Key == keyDecreaseListWidth)
    {
-@@ -5055,6 +5466,60 @@ std::string UiModel::GetContactPhoneLocked(const std::string& p_ProfileId, const
+@@ -5055,6 +5468,60 @@ std::string UiModel::GetContactPhoneLocked(const std::string& p_ProfileId, const
    return GetImpl().GetContactPhone(p_ProfileId, p_ChatId);
  }
  
@@ -6234,7 +6423,7 @@ index d40b779..da14bf4 100644
  int UiModel::GetCurrentChatIndexLocked()
  {
    nc_assert(m_ModelMutex.owns_lock());
-@@ -5265,7 +5730,9 @@ std::vector<std::string> UiModel::SelectFile()
+@@ -5265,7 +5732,9 @@ std::vector<std::string> UiModel::SelectFile()
      static const bool filePickerPersistDir = UiConfig::GetBool("file_picker_persist_dir");
      if (!filePickerPersistDir || currentDir.empty())
      {
@@ -6245,7 +6434,7 @@ index d40b779..da14bf4 100644
      }
  
      UiDialogParams params(this, "Send File", 0.75, 0.65);
-@@ -5284,9 +5751,18 @@ std::vector<std::string> UiModel::SelectFile()
+@@ -5284,9 +5753,18 @@ std::vector<std::string> UiModel::SelectFile()
  void UiModel::OnKeyTransfer()
  {
    // Pre-req
@@ -6264,7 +6453,7 @@ index d40b779..da14bf4 100644
    }
  
    // Open modal dialog without model mutex held
-@@ -5760,7 +6236,29 @@ void UiModel::OnKeyCopy()
+@@ -5760,7 +6238,29 @@ void UiModel::OnKeyCopy()
  
  void UiModel::OnKeyPaste()
  {
@@ -6295,7 +6484,7 @@ index d40b779..da14bf4 100644
    {
      // Open modal dialog without model mutex held
      static const bool confirmSendPastedImage = UiConfig::GetBool("confirm_send_pasted_image");
-@@ -5774,8 +6272,9 @@ void UiModel::OnKeyPaste()
+@@ -5774,8 +6274,9 @@ void UiModel::OnKeyPaste()
  
      static int index = 0;
      ++index;
@@ -6393,19 +6582,25 @@ index 4782732..97d3d4a 100644
    bool GetEditMessageActiveLocked();
    bool GetEmojiEnabledLocked();
 diff --git a/src/uistatusview.cpp b/src/uistatusview.cpp
-index 4ffaa59..869818c 100644
+index 4ffaa59..a158f2b 100644
 --- a/src/uistatusview.cpp
 +++ b/src/uistatusview.cpp
-@@ -7,6 +7,8 @@
+@@ -7,8 +7,14 @@
  
  #include "uistatusview.h"
  
 +#include <algorithm>
++#include <vector>
 +
  #include "apputil.h"
  #include "strutil.h"
++#include "uploadprogress.h"
++#include "timeutil.h"
++#include "fileutil.h"
  #include "uicolorconfig.h"
-@@ -20,7 +22,21 @@ UiStatusView::UiStatusView(const UiViewParams& p_Params)
+ #include "uiconfig.h"
+ #include "uimodel.h"
+@@ -20,7 +26,54 @@ UiStatusView::UiStatusView(const UiViewParams& p_Params)
  
  void UiStatusView::Draw()
  {
@@ -6424,11 +6619,44 @@ index 4ffaa59..869818c 100644
 +    lastReplyKey = replyKey;
 +  }
 +
++  // upload progress: spinner + bar when the protocol reports it, spinner + elapsed time otherwise
++  std::wstring uploadLine;
++  const std::vector<UploadProgress::Item> uploads = isReplying ? std::vector<UploadProgress::Item>() : UploadProgress::Snapshot();
++  if (!uploads.empty())
++  {
++    static const wchar_t* spinner[] = { L"\u280b", L"\u2819", L"\u2839", L"\u2838", L"\u283c", L"\u2834", L"\u2826", L"\u2827", L"\u2807", L"\u280f" };
++    const int64_t nowMs = TimeUtil::GetCurrentTimeMSec();
++    const UploadProgress::Item& item = uploads.front();
++    uploadLine = std::wstring(L" ") + spinner[(nowMs / 100) % 10] + L" Sending " + StrUtil::ToWString(FileUtil::BaseName(item.path));
++    if (item.total > 0)
++    {
++      const int pct = (int)std::min<int64_t>(100, (item.uploaded * 100) / item.total);
++      const int barW = 12;
++      const int filled = (pct * barW) / 100;
++      uploadLine += L"  " + std::wstring(filled, L'\u2588') + std::wstring(barW - filled, L'\u2591') + L" " +
++        StrUtil::ToWString(std::to_string(pct)) + L"%  " + StrUtil::ToWString(FileUtil::GetSuffixedSize(item.uploaded)) +
++        L" / " + StrUtil::ToWString(FileUtil::GetSuffixedSize(item.total));
++    }
++    else
++    {
++      uploadLine += L"...  " + StrUtil::ToWString(std::to_string((nowMs - item.startMs) / 1000)) + L"s";
++    }
++
++    if (uploads.size() > 1) uploadLine += L"  (+" + StrUtil::ToWString(std::to_string(uploads.size() - 1)) + L" more)";
++  }
++
++  static std::wstring lastUploadLine;
++  if (uploadLine != lastUploadLine)
++  {
++    m_Dirty = true;
++    lastUploadLine = uploadLine;
++  }
++
 +  if (!m_Dirty) return;
    m_Dirty = false;
  
    curs_set(0);
-@@ -42,7 +58,14 @@ void UiStatusView::Draw()
+@@ -42,7 +95,18 @@ void UiStatusView::Draw()
    wattron(m_Win, attribute | colorPair);
  
    std::wstring wstatus;
@@ -6439,6 +6667,10 @@ index 4ffaa59..869818c 100644
 +    const std::wstring banner = L" \u21a9 " + StrUtil::ToWString(replyName) + L": " + StrUtil::ToWString(replyText);
 +    const std::wstring hint = L"   Enter: send reply \u00b7 Ctrl-C: cancel";
 +    wstatus = StrUtil::TrimPadWString(banner, std::max(0, m_W - (int)hint.size())) + hint;
++  }
++  else if (!uploadLine.empty())
++  {
++    wstatus = StrUtil::TrimPadWString(uploadLine, m_W);
 +  }
 +  else if (currentChat.first.empty() && currentChat.second.empty())
    {
