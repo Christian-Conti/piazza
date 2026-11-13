@@ -4578,10 +4578,24 @@ index f8d47c3..ace3be3 100644
  
    if (AppUtil::IsTerminateRequested())
 diff --git a/src/ui.cpp b/src/ui.cpp
-index bf7098e..c98e2bc 100644
+index bf7098e..8d09a9e 100644
 --- a/src/ui.cpp
 +++ b/src/ui.cpp
-@@ -57,6 +57,7 @@ void Ui::Init()
+@@ -20,6 +20,7 @@
+ #include "timeutil.h"
+ #include "uicolorconfig.h"
+ #include "uiconfig.h"
++#include "uiimage.h"
+ #include "uicontroller.h"
+ #include "uikeyconfig.h"
+ #include "uikeydump.h"
+@@ -52,11 +53,13 @@ void Ui::Init()
+   printf("\033[?1004h"); // enable terminal focus in/out event
+ 
+   setlocale(LC_ALL, "");
++  UiImage::QueryPalette(); // exact RGB of the ANSI colors, for the rounded bubble corners (kitty only)
+   initscr();
+   noecho();
    cbreak();
    UiConfig::GetBool("linefeed_on_enter") ? nl() : nonl();
    keypad(stdscr, TRUE);
@@ -4829,7 +4843,7 @@ index 0000000..59a9ae8
 +bool Poll(); // reap a finished player; true when playback just ended
 +}
 diff --git a/src/uicolorconfig.cpp b/src/uicolorconfig.cpp
-index 5dadae9..79ec55b 100644
+index 5dadae9..92fab51 100644
 --- a/src/uicolorconfig.cpp
 +++ b/src/uicolorconfig.cpp
 @@ -27,70 +27,101 @@ void UiColorConfig::Init()
@@ -4964,7 +4978,19 @@ index 5dadae9..79ec55b 100644
    const std::string configPath(FileUtil::GetApplicationDir() + std::string("/color.conf"));
    m_Config = Config(configPath, defaultConfig);
  
-@@ -253,6 +284,13 @@ int UiColorConfig::GetColorId(const std::string& p_Str)
+@@ -107,6 +138,11 @@ void UiColorConfig::Cleanup()
+   m_Config.Save();
+ }
+ 
++int UiColorConfig::GetConfigColorId(const std::string& p_Param)
++{
++  return GetColorId(m_Config.Get(p_Param));
++}
++
+ int UiColorConfig::GetColorPair(const std::string& p_Param)
+ {
+   if (!has_colors()) return 0;
+@@ -253,6 +289,13 @@ int UiColorConfig::GetColorId(const std::string& p_Str)
  
    if (p_Str.empty()) return -1;
  
@@ -4978,6 +5004,18 @@ index 5dadae9..79ec55b 100644
    // hex
    if ((p_Str.size() == 8) && (p_Str.substr(0, 2) == "0x"))
    {
+diff --git a/src/uicolorconfig.h b/src/uicolorconfig.h
+index 08acde9..3d9d426 100644
+--- a/src/uicolorconfig.h
++++ b/src/uicolorconfig.h
+@@ -21,6 +21,7 @@ public:
+   static int GetUserColorPair(const std::string& p_Param, const std::string& p_UserId);
+   static bool IsUserColor(const std::string& p_Param); // ex: "top_color"
+   static int GetAttribute(const std::string& p_Param); // ex: "top_attr"
++  static int GetConfigColorId(const std::string& p_Param); // palette index of a config value, -1 if none/custom
+ 
+ private:
+   static int GetColorId(const std::string& p_Str);
 diff --git a/src/uiconfig.cpp b/src/uiconfig.cpp
 index a852e2b..62b3b85 100644
 --- a/src/uiconfig.cpp
@@ -5355,7 +5393,7 @@ index 32e8e82..5652628 100644
  
    werase(m_Win);
 diff --git a/src/uihistoryview.cpp b/src/uihistoryview.cpp
-index ef9da40..23a2e4a 100644
+index ef9da40..55fc38f 100644
 --- a/src/uihistoryview.cpp
 +++ b/src/uihistoryview.cpp
 @@ -7,6 +7,11 @@
@@ -5476,7 +5514,7 @@ index ef9da40..23a2e4a 100644
    const bool emojiEnabled = m_Model->GetEmojiEnabledLocked();
    static const bool developerMode = AppUtil::GetDeveloperMode();
  
-@@ -83,10 +139,22 @@ void UiHistoryView::Draw()
+@@ -83,10 +139,39 @@ void UiHistoryView::Draw()
    int messageOffset = std::max(m_Model->GetMessageOffsetLocked(currentChat.first, currentChat.second), 0);
  
    werase(m_PaddedWin);
@@ -5490,6 +5528,23 @@ index ef9da40..23a2e4a 100644
 +  const int rightMargin = 1; // gap between the right bubble edge and the screen
 +  const int bubbleW = std::max(10, std::min(m_PaddedW - rightMargin, (m_PaddedW * 3) / 4));
 +
++  // rounded corners are real antialiased images when the terminal can show them; otherwise block-character corners
++  const bool roundImages = UiImage::RoundedCornersAvailable();
++  static const std::vector<int> cornerSentIdx = []()
++  {
++    std::vector<int> v;
++    for (int k = 0; k < 6; ++k) v.push_back(UiColorConfig::GetConfigColorId("history_text_sent_k" + std::to_string(k) + "_color_bg"));
++    return v;
++  }();
++  static const std::vector<int> cornerRecvIdx = []()
++  {
++    std::vector<int> v;
++    for (int k = 0; k < 6; ++k) v.push_back(UiColorConfig::GetConfigColorId("history_text_recv_k" + std::to_string(k) + "_color_bg"));
++    return v;
++  }();
++  static const int cornerSelectedIdx = UiColorConfig::GetConfigColorId("history_selected_color_bg");
++  const int kindIdx = std::min(std::max(m_Model->GetProfileKindLocked(currentChat.first), 0), 5);
++  std::vector<UiImage::Corner> corners;
 +  std::vector<UiImage::Placement> placements;
 +  int paddedBegY = 0;
 +  int paddedBegX = 0;
@@ -5500,7 +5555,7 @@ index ef9da40..23a2e4a 100644
    bool firstMessage = true;
    int y = m_PaddedH - 1;
    for (auto it = std::next(messageVec.begin(), messageOffset); it != messageVec.end(); ++it)
-@@ -105,20 +173,9 @@ void UiHistoryView::Draw()
+@@ -105,20 +190,9 @@ void UiHistoryView::Draw()
      int attributeText = isSelectedMessage ? attributeTextSelected : attributeTextNormal;
      int colorPairText = [&]()
      {
@@ -5524,7 +5579,7 @@ index ef9da40..23a2e4a 100644
      }();
  
      std::vector<std::wstring> wlines;
-@@ -131,16 +188,19 @@ void UiHistoryView::Draw()
+@@ -131,16 +205,19 @@ void UiHistoryView::Draw()
          text = StrUtil::Textize(text);
        }
  
@@ -5545,7 +5600,7 @@ index ef9da40..23a2e4a 100644
          if (!quotedIt->second.text.empty())
          {
            quotedText = StrUtil::Split(quotedIt->second.text, '\n').at(0);
-@@ -161,17 +221,22 @@ void UiHistoryView::Draw()
+@@ -161,17 +238,22 @@ void UiHistoryView::Draw()
          quotedText = "";
        }
  
@@ -5574,7 +5629,7 @@ index ef9da40..23a2e4a 100644
      if (!msg.fileInfo.empty())
      {
        FileInfo fileInfo = ProtocolUtil::FileInfoFromHex(msg.fileInfo);
-@@ -181,10 +246,24 @@ void UiHistoryView::Draw()
+@@ -181,10 +263,24 @@ void UiHistoryView::Draw()
          (AppConfig::GetNum("attachment_prefetch") == AttachmentPrefetchAll);
        static const bool isAttachmentPrefetchSelected =
          (AppConfig::GetNum("attachment_prefetch") == AttachmentPrefetchSelected);
@@ -5600,7 +5655,7 @@ index ef9da40..23a2e4a 100644
            m_Model->DownloadAttachmentLocked(currentChat.first, currentChat.second, *it,
                                              fileInfo.fileId, DownloadFileActionNone);
            fileInfo = ProtocolUtil::FileInfoFromHex(msg.fileInfo);
-@@ -221,7 +300,42 @@ void UiHistoryView::Draw()
+@@ -221,7 +317,42 @@ void UiHistoryView::Draw()
        }
  
        std::wstring fileStr = attachmentIndicator + StrUtil::ToWString(fileName + fileStatus);
@@ -5643,7 +5698,7 @@ index ef9da40..23a2e4a 100644
      }
  
      // Reactions
-@@ -289,7 +403,7 @@ void UiHistoryView::Draw()
+@@ -289,7 +420,7 @@ void UiHistoryView::Draw()
              reactionsText = StrUtil::Textize(reactionsText);
            }
  
@@ -5652,7 +5707,7 @@ index ef9da40..23a2e4a 100644
            std::wstring reactions = StrUtil::ToWString(reactionsText);
            if (StrUtil::WStringWidth(reactions) > maxReactionsLen)
            {
-@@ -306,7 +420,7 @@ void UiHistoryView::Draw()
+@@ -306,7 +437,7 @@ void UiHistoryView::Draw()
        }
      }
  
@@ -5661,13 +5716,27 @@ index ef9da40..23a2e4a 100644
      if (firstMessage && ((int)wlines.size() > maxMessageLines))
      {
        wlines.resize(maxMessageLines - 1);
-@@ -314,39 +428,83 @@ void UiHistoryView::Draw()
+@@ -314,39 +445,117 @@ void UiHistoryView::Draw()
        reactionLines = 0;
      }
  
 +    const int bx = msg.isOutgoing ? (m_PaddedW - bubbleW - rightMargin) : 0;
++    int yTopEdge = -1;
++    int yBottomEdge = -1;
++    const int cornerIdx = isSelectedMessage ? cornerSelectedIdx : (msg.isOutgoing ? cornerSentIdx[kindIdx] : cornerRecvIdx[kindIdx]);
 +    auto drawEdge = [&](int p_Y, bool p_Top)
 +    {
++      if (roundImages && (cornerIdx >= 0) && (cornerIdx < 16))
++      {
++        // straight part only; the 2x2-cell corner images supply the rounded ends
++        const std::wstring straight = std::wstring(std::max(0, bubbleW - 4), p_Top ? L'\u2584' : L'\u2580');
++        const int edgePair = isSelectedMessage ? colorPairEdgeSelected : (msg.isOutgoing ? kind.edgeSent : kind.edgeRecv);
++        wattron(m_PaddedWin, edgePair);
++        mvwaddnwstr(m_PaddedWin, p_Y, bx + 2, straight.c_str(), straight.size());
++        wattroff(m_PaddedWin, edgePair);
++        return;
++      }
++
 +      // rounded look: half-height edge with quadrant blocks as corners, drawn in the bubble color over the pane
 +      const std::wstring edge = std::wstring(1, p_Top ? L'\u2597' : L'\u259d') +
 +        std::wstring(bubbleW - 2, p_Top ? L'\u2584' : L'\u2580') + std::wstring(1, p_Top ? L'\u2596' : L'\u2598');
@@ -5677,9 +5746,18 @@ index ef9da40..23a2e4a 100644
 +      wattroff(m_PaddedWin, pair);
 +    };
 +
++    const bool useCornerImages = roundImages && (cornerIdx >= 0) && (cornerIdx < 16);
 +    if (y >= 0)
 +    {
 +      drawEdge(y, false);
++      yBottomEdge = y;
++      if (useCornerImages)
++      {
++        // bottom corners span the last text row and the bottom edge row
++        corners.push_back({ paddedBegX + bx, paddedBegY + y - 1, 2, cornerIdx });
++        corners.push_back({ paddedBegX + bx + bubbleW - 2, paddedBegY + y - 1, 3, cornerIdx });
++      }
++
 +      if (--y < 0) break;
 +    }
 +
@@ -5740,7 +5818,18 @@ index ef9da40..23a2e4a 100644
 +        wattroff(m_PaddedWin, quoteAttr | (msg.isOutgoing ? kind.quoteSent : kind.quoteRecv));
 +      }
 +
++      const bool isCornerRow = useCornerImages && ((lineIdx == 0) || (lineIdx == (int)wlines.size() - 1));
++      if (isCornerRow)
++      {
++        // the corner image paints these cells, so they must be transparent underneath
++        wattron(m_PaddedWin, colorPairPane);
++        mvwaddnwstr(m_PaddedWin, y, bx, L"  ", 2);
++        mvwaddnwstr(m_PaddedWin, y, bx + bubbleW - 2, L"  ", 2);
++        wattroff(m_PaddedWin, colorPairPane);
++      }
++
 +      // soft sides: the outer cells become half blocks (right half on the left edge, left half on the right edge)
++      if (!isCornerRow)
 +      {
 +        const int sidePair = isSelectedMessage ? colorPairEdgeSelected : (msg.isOutgoing ? kind.edgeSent : kind.edgeRecv);
 +        wattron(m_PaddedWin, sidePair);
@@ -5757,17 +5846,25 @@ index ef9da40..23a2e4a 100644
        }
        else if (isReaction)
        {
-@@ -362,6 +520,9 @@ void UiHistoryView::Draw()
+@@ -362,6 +571,17 @@ void UiHistoryView::Draw()
  
      if (y < 0) break;
  
 +    drawEdge(y, true);
++    yTopEdge = y;
++    if (useCornerImages)
++    {
++      // top corners span the top edge row and the first text row
++      corners.push_back({ paddedBegX + bx, paddedBegY + y, 0, cornerIdx });
++      corners.push_back({ paddedBegX + bx + bubbleW - 2, paddedBegY + y, 1, cornerIdx });
++    }
++
 +    if (--y < 0) break;
 +
      int attributeName = isSelectedMessage ? attributeNameSelected : attributeNameNormal;
      int colorPairName = [&]()
      {
-@@ -398,7 +559,12 @@ void UiHistoryView::Draw()
+@@ -398,7 +618,12 @@ void UiHistoryView::Draw()
      {
        if (msg.timeSent != std::numeric_limits<int64_t>::max())
        {
@@ -5781,7 +5878,7 @@ index ef9da40..23a2e4a 100644
        }
      }
  
-@@ -419,14 +585,76 @@ void UiHistoryView::Draw()
+@@ -419,14 +644,76 @@ void UiHistoryView::Draw()
          L" user " + StrUtil::ToWString(msg.senderId);
      }
  
@@ -5861,11 +5958,11 @@ index ef9da40..23a2e4a 100644
  
      if (--y < 0) break;
  
-@@ -434,6 +662,18 @@ void UiHistoryView::Draw()
+@@ -434,6 +721,18 @@ void UiHistoryView::Draw()
    }
  
    wrefresh(m_PaddedWin);
-+  UiImage::Show(placements);
++  UiImage::ShowAll(placements, corners);
 +
 +  // thin rule under the chat title
 +  if (m_RuleWin != nullptr)
@@ -5894,10 +5991,10 @@ index ce5934c..03b2c8b 100644
    int m_HistoryShowCount = 0;
 diff --git a/src/uiimage.cpp b/src/uiimage.cpp
 new file mode 100644
-index 0000000..44160b9
+index 0000000..ab19614
 --- /dev/null
 +++ b/src/uiimage.cpp
-@@ -0,0 +1,182 @@
+@@ -0,0 +1,417 @@
 +// uiimage.cpp
 +//
 +// shortcut: shells out to `kitten icat` per image on layout change, simple but spawns a process per
@@ -5905,7 +6002,14 @@ index 0000000..44160b9
 +
 +#include "uiimage.h"
 +
++#include <poll.h>
++#include <sys/ioctl.h>
++#include <termios.h>
++#include <unistd.h>
++
 +#include <algorithm>
++#include <cmath>
++#include <set>
 +#include <cstdio>
 +#include <cstdlib>
 +
@@ -5914,6 +6018,7 @@ index 0000000..44160b9
 +
 +#include "fileutil.h"
 +#include "strutil.h"
++#include "timeutil.h"
 +
 +namespace UiImage
 +{
@@ -6047,19 +6152,213 @@ index 0000000..44160b9
 +  fflush(stdout);
 +}
 +
++struct Rgb
++{
++  uint8_t r = 0, g = 0, b = 0;
++};
++static Rgb s_Palette[16];
++static bool s_PaletteReady = false;
++
++// Parse OSC 4 replies: ESC ] 4 ; N ; rgb:RRRR/GGGG/BBBB (ESC \ | BEL)
++static int ParsePalette(const std::string& p_Buf)
++{
++  int found = 0;
++  size_t pos = 0;
++  while ((pos = p_Buf.find("\x1b]4;", pos)) != std::string::npos)
++  {
++    const size_t numEnd = p_Buf.find(';', pos + 4);
++    const size_t rgb = p_Buf.find("rgb:", pos);
++    if ((numEnd == std::string::npos) || (rgb == std::string::npos)) break;
++    const int idx = atoi(p_Buf.substr(pos + 4, numEnd - (pos + 4)).c_str());
++    size_t end = rgb + 4;
++    while ((end < p_Buf.size()) && (p_Buf[end] != '\x1b') && (p_Buf[end] != '\a')) ++end;
++    if (end >= p_Buf.size()) break; // incomplete, wait for more
++    const std::string spec = p_Buf.substr(rgb + 4, end - (rgb + 4));
++    int ch[3] = { 0, 0, 0 };
++    size_t start = 0;
++    bool ok = true;
++    for (int i = 0; i < 3; ++i)
++    {
++      const size_t slash = spec.find('/', start);
++      const std::string hex = spec.substr(start, (slash == std::string::npos) ? std::string::npos : slash - start);
++      if (hex.empty() || (hex.size() > 4)) { ok = false; break; }
++      const long value = strtol(hex.c_str(), nullptr, 16);
++      const long maxv = (1L << (4 * hex.size())) - 1;
++      ch[i] = (int)((value * 255) / maxv);
++      start = (slash == std::string::npos) ? spec.size() : slash + 1;
++    }
++
++    if (ok && (idx >= 0) && (idx < 16))
++    {
++      s_Palette[idx] = { (uint8_t)ch[0], (uint8_t)ch[1], (uint8_t)ch[2] };
++      ++found;
++    }
++
++    pos = end;
++  }
++
++  return found;
++}
++
++void QueryPalette()
++{
++  if (!Enabled() || !isatty(STDIN_FILENO) || !isatty(STDOUT_FILENO)) return;
++
++  struct termios saved;
++  if (tcgetattr(STDIN_FILENO, &saved) != 0) return;
++  struct termios raw = saved;
++  cfmakeraw(&raw);
++  tcsetattr(STDIN_FILENO, TCSANOW, &raw);
++
++  std::string query;
++  for (int i = 0; i < 16; ++i) query += "\x1b]4;" + std::to_string(i) + ";?\x1b\\";
++  if (write(STDOUT_FILENO, query.c_str(), query.size()) < 0) {}
++
++  std::string buf;
++  const int64_t deadline = TimeUtil::GetCurrentTimeMSec() + 500;
++  int found = 0;
++  while ((found < 16) && (TimeUtil::GetCurrentTimeMSec() < deadline))
++  {
++    struct pollfd pfd = { STDIN_FILENO, POLLIN, 0 };
++    if (poll(&pfd, 1, 80) <= 0)
++    {
++      if (found > 0) break; // replies stopped arriving
++      continue;
++    }
++
++    char tmp[512];
++    const ssize_t n = read(STDIN_FILENO, tmp, sizeof(tmp));
++    if (n <= 0) break;
++    buf.append(tmp, n);
++    found = ParsePalette(buf);
++  }
++
++  tcsetattr(STDIN_FILENO, TCSAFLUSH, &saved);
++  s_PaletteReady = (found >= 8);
++}
++
++static bool CellPixels(int& p_W, int& p_H)
++{
++  struct winsize ws;
++  if ((ioctl(STDOUT_FILENO, TIOCGWINSZ, &ws) != 0) || (ws.ws_col == 0) || (ws.ws_row == 0)) return false;
++  p_W = ws.ws_xpixel / ws.ws_col;
++  p_H = ws.ws_ypixel / ws.ws_row;
++  return (p_W >= 4) && (p_H >= 8);
++}
++
++bool RoundedCornersAvailable()
++{
++  int w = 0, h = 0;
++  return Enabled() && s_PaletteReady && CellPixels(w, h);
++}
++
++static std::string Base64(const std::vector<uint8_t>& p_Data)
++{
++  static const char* tbl = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
++  std::string out;
++  out.reserve(((p_Data.size() + 2) / 3) * 4);
++  for (size_t i = 0; i < p_Data.size(); i += 3)
++  {
++    const uint32_t v = (p_Data[i] << 16) | ((i + 1 < p_Data.size() ? p_Data[i + 1] : 0) << 8) |
++      (i + 2 < p_Data.size() ? p_Data[i + 2] : 0);
++    out += tbl[(v >> 18) & 63];
++    out += tbl[(v >> 12) & 63];
++    out += (i + 1 < p_Data.size()) ? tbl[(v >> 6) & 63] : '=';
++    out += (i + 2 < p_Data.size()) ? tbl[v & 63] : '=';
++  }
++
++  return out;
++}
++
++// RGBA bitmap of a 2x2-cell block holding one rounded bubble corner (4x4 supersampled for smooth edges).
++// The bubble edge sits half a cell in from the block's outer sides, matching the half-block edges around it.
++static std::vector<uint8_t> MakeCorner(int p_Shape, Rgb p_Color, int p_CellW, int p_CellH)
++{
++  const int W = 2 * p_CellW;
++  const int H = 2 * p_CellH;
++  const double x0 = p_CellW / 2.0;
++  const double y0 = p_CellH / 2.0;
++  const double R = std::min(1.4 * p_CellW, 0.7 * p_CellH);
++  std::vector<uint8_t> px((size_t)W * H * 4, 0);
++  for (int y = 0; y < H; ++y)
++  {
++    for (int x = 0; x < W; ++x)
++    {
++      int inside = 0;
++      for (int sy = 0; sy < 4; ++sy)
++      {
++        for (int sx = 0; sx < 4; ++sx)
++        {
++          double fx = x + (sx + 0.5) / 4.0;
++          double fy = y + (sy + 0.5) / 4.0;
++          if (p_Shape & 1) fx = W - fx; // mirror for the right-hand corners
++          if (p_Shape & 2) fy = H - fy; // mirror for the bottom corners
++          bool in;
++          if ((fx < x0) || (fy < y0)) in = false;
++          else if ((fx >= x0 + R) || (fy >= y0 + R)) in = true;
++          else
++          {
++            const double dx = (x0 + R) - fx;
++            const double dy = (y0 + R) - fy;
++            in = ((dx * dx) + (dy * dy)) <= (R * R);
++          }
++
++          inside += in ? 1 : 0;
++        }
++      }
++
++      uint8_t* p = &px[((size_t)y * W + x) * 4];
++      p[0] = p_Color.r;
++      p[1] = p_Color.g;
++      p[2] = p_Color.b;
++      p[3] = (uint8_t)((inside * 255) / 16);
++    }
++  }
++
++  return px;
++}
++
++static std::set<uint32_t> s_Transmitted;
++
++static void TransmitCorner(uint32_t p_Id, int p_Shape, Rgb p_Color, int p_CellW, int p_CellH, std::string& p_Out)
++{
++  if (s_Transmitted.count(p_Id)) return;
++  s_Transmitted.insert(p_Id);
++  const std::string data = Base64(MakeCorner(p_Shape, p_Color, p_CellW, p_CellH));
++  const size_t chunk = 4096;
++  for (size_t off = 0; off < data.size(); off += chunk)
++  {
++    const bool first = (off == 0);
++    const bool last = (off + chunk >= data.size());
++    p_Out += "\x1b_G";
++    if (first)
++    {
++      p_Out += "a=t,f=32,s=" + std::to_string(2 * p_CellW) + ",v=" + std::to_string(2 * p_CellH) + ",i=" +
++        std::to_string(p_Id) + ",q=2,";
++    }
++
++    p_Out += std::string("m=") + (last ? "0" : "1") + ";" + data.substr(off, chunk) + "\x1b\\";
++  }
++}
++
 +void Clear()
 +{
 +  if (Enabled() && !s_Signature.empty())
 +  {
-+    Run("--clear");
++    const char* clearAll = "\x1b_Ga=d,d=a,q=2\x1b\\"; // delete every placement; uploaded corner bitmaps stay cached
++    fputs(clearAll, stdout);
++    fflush(stdout);
 +  }
 +
 +  s_Signature.clear();
 +}
 +
-+void Show(const std::vector<Placement>& p_Placements)
++void ShowAll(const std::vector<Placement>& p_Placements, const std::vector<Corner>& p_Corners)
 +{
 +  if (!Enabled()) return;
++
++  int cw = 0, ch = 0;
++  const bool haveCells = CellPixels(cw, ch);
 +
 +  std::string signature;
 +  for (const auto& p : p_Placements)
@@ -6068,24 +6367,57 @@ index 0000000..44160b9
 +      "x" + std::to_string(p.rows) + ";";
 +  }
 +
++  for (const auto& c : p_Corners)
++  {
++    signature += "c" + std::to_string(c.col) + "," + std::to_string(c.row) + "," + std::to_string(c.shape) + "," +
++      std::to_string(c.colorIdx) + ";";
++  }
++
++  signature += "@" + std::to_string(cw) + "x" + std::to_string(ch);
 +  if (signature == s_Signature) return;
 +
-+  Clear();
++  // clear first, always: a placement left behind a moved bubble would be a visible glitch
++  fputs("\x1b_Ga=d,d=a,q=2\x1b\\", stdout);
++  fflush(stdout);
++
 +  for (const auto& p : p_Placements)
 +  {
 +    Run("--align=left --place=" + std::to_string(p.cols) + "x" + std::to_string(p.rows) + "@" +
 +        std::to_string(p.x) + "x" + std::to_string(p.y) + " '" + StrUtil::EscapeSingleQuote(p.path) + "'");
 +  }
 +
++  if (haveCells && s_PaletteReady && !p_Corners.empty())
++  {
++    std::string out = "\x1b" "7";
++    uint32_t placementId = 1;
++    for (const auto& c : p_Corners)
++    {
++      if ((c.colorIdx < 0) || (c.colorIdx > 15)) continue;
++      const uint32_t id = 0x40000000u + ((uint32_t)((c.shape << 4) | c.colorIdx) << 16) + (uint32_t)((cw * 131 + ch) & 0xFFFF);
++      TransmitCorner(id, c.shape, s_Palette[c.colorIdx], cw, ch, out);
++      out += "\x1b[" + std::to_string(c.row + 1) + ";" + std::to_string(c.col + 1) + "H";
++      out += "\x1b_Ga=p,i=" + std::to_string(id) + ",p=" + std::to_string(placementId++) + ",c=2,r=2,C=1,z=1,q=2\x1b\\";
++    }
++
++    out += "\x1b" "8";
++    fputs(out.c_str(), stdout);
++    fflush(stdout);
++  }
++
 +  s_Signature = signature;
++}
++
++void Show(const std::vector<Placement>& p_Placements)
++{
++  ShowAll(p_Placements, std::vector<Corner>());
 +}
 +}
 diff --git a/src/uiimage.h b/src/uiimage.h
 new file mode 100644
-index 0000000..6682649
+index 0000000..d21a2f3
 --- /dev/null
 +++ b/src/uiimage.h
-@@ -0,0 +1,35 @@
+@@ -0,0 +1,47 @@
 +// uiimage.h
 +//
 +// Inline image display in kitty-graphics-capable terminals (via `kitten icat`).
@@ -6119,6 +6451,18 @@ index 0000000..6682649
 +void DeleteAutoFiles(); // delete everything fetched for inline display (idempotent)
 +void CleanupStale(); // delete leftovers of a previous session that did not exit cleanly
 +void Show(const std::vector<Placement>& p_Placements); // no-op if unchanged since last call
++
++// Rounded bubble corners: 2x2-cell images with an antialiased arc, in the exact RGB of the terminal palette.
++struct Corner
++{
++  int col = 0; // screen cell of the top-left of the 2x2 block
++  int row = 0;
++  int shape = 0; // 0 top-left, 1 top-right, 2 bottom-left, 3 bottom-right
++  int colorIdx = 0; // ANSI palette index 0..15
++};
++void QueryPalette(); // ask the terminal for its 16 ANSI colors; call once before ncurses starts
++bool RoundedCornersAvailable();
++void ShowAll(const std::vector<Placement>& p_Placements, const std::vector<Corner>& p_Corners);
 +void Clear();
 +}
 diff --git a/src/uikeyconfig.cpp b/src/uikeyconfig.cpp
