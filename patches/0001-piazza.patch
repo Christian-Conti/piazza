@@ -4156,6 +4156,29 @@ index 0000000..8ea6505
 +  { "🏴󠁧󠁢󠁳󠁣󠁴󠁿", 8 },
 +  { "🏴󠁧󠁢󠁷󠁬󠁳󠁿", 8 },
 +};
+diff --git a/lib/tgchat/src/tgchat.cpp b/lib/tgchat/src/tgchat.cpp
+index 2926fe0..bdc57cf 100644
+--- a/lib/tgchat/src/tgchat.cpp
++++ b/lib/tgchat/src/tgchat.cpp
+@@ -1010,7 +1010,17 @@ void TgChat::Impl::PerformRequest(std::shared_ptr<RequestMessage> p_RequestMessa
+         {
+           Status::Clear(m_ProfileId, Status::FlagSending);
+ 
+-          if (object->get_id() == td::td_api::error::ID) return;
++          if (object->get_id() == td::td_api::error::ID)
++          {
++            auto& error = static_cast<td::td_api::error&>(*object);
++            LOG_WARNING("send message failed: %d %s", (int)error.code_, error.message_.c_str());
++            std::shared_ptr<SendMessageNotify> failedNotify = std::make_shared<SendMessageNotify>(m_ProfileId);
++            failedNotify->success = false;
++            failedNotify->chatId = sendMessageRequest->chatId;
++            failedNotify->chatMessage = sendMessageRequest->chatMessage;
++            CallMessageHandler(failedNotify);
++            return;
++          }
+ 
+           std::shared_ptr<SendMessageNotify> sendMessageNotify =
+             std::make_shared<SendMessageNotify>(m_ProfileId);
 diff --git a/src/main.cpp b/src/main.cpp
 index f8d47c3..ace3be3 100644
 --- a/src/main.cpp
@@ -5485,7 +5508,7 @@ index f5af738..2087136 100644
      m_Result = false;
      m_Running = false;
 diff --git a/src/uimodel.cpp b/src/uimodel.cpp
-index d40b779..6cfc14f 100644
+index d40b779..da14bf4 100644
 --- a/src/uimodel.cpp
 +++ b/src/uimodel.cpp
 @@ -8,6 +8,7 @@
@@ -5816,7 +5839,16 @@ index d40b779..6cfc14f 100644
      {
        unreadVec.push_back(i);
        if (m_CurrentChatIndex == (int)i)
-@@ -1372,13 +1595,14 @@ void UiModel::Impl::TransferFile(const std::vector<std::string>& p_FilePaths)
+@@ -1348,6 +1571,8 @@ void UiModel::Impl::TransferFile(const std::vector<std::string>& p_FilePaths)
+       FileInfo fileInfo;
+       fileInfo.filePath = filePath;
+       fileInfo.fileType = FileUtil::GetMimeType(filePath);
++      LOG_INFO("send file %s (%s) to %s %s", filePath.c_str(), fileInfo.fileType.c_str(), profileId.c_str(),
++               chatId.c_str());
+ 
+       std::shared_ptr<SendMessageRequest> sendMessageRequest =
+         std::make_shared<SendMessageRequest>();
+@@ -1372,13 +1597,14 @@ void UiModel::Impl::TransferFile(const std::vector<std::string>& p_FilePaths)
          }
        }
  
@@ -5832,7 +5864,21 @@ index d40b779..6cfc14f 100644
          }
        }
  
-@@ -2497,12 +2721,7 @@ void UiModel::Impl::SortChats()
+@@ -1860,7 +2086,12 @@ void UiModel::Impl::MessageHandler(std::shared_ptr<ServiceMessage> p_ServiceMess
+       {
+         std::shared_ptr<SendMessageNotify> sendMessageNotify = std::static_pointer_cast<SendMessageNotify>(
+           p_ServiceMessage);
+-        LOG_TRACE(sendMessageNotify->success ? "send ok" : "send failed");
++        if (sendMessageNotify->success) LOG_TRACE("send ok");
++        else
++        {
++          LOG_WARNING("send failed (chat %s)", sendMessageNotify->chatId.c_str());
++          m_TriggerTerminalBell = true;
++        }
+       }
+       break;
+ 
+@@ -2497,12 +2728,7 @@ void UiModel::Impl::SortChats()
  
    if (!m_ChatVec.empty())
    {
@@ -5846,7 +5892,7 @@ index d40b779..6cfc14f 100644
      {
        for (size_t i = 0; i < m_ChatVec.size(); ++i)
        {
-@@ -2615,6 +2834,8 @@ void UiModel::Impl::UpdateChatInfoIsUnread(const std::string& p_ProfileId, const
+@@ -2615,6 +2841,8 @@ void UiModel::Impl::UpdateChatInfoIsUnread(const std::string& p_ProfileId, const
              m_TriggerTerminalBell = true;
            }
  
@@ -5855,7 +5901,7 @@ index d40b779..6cfc14f 100644
            bool desktopNotify = false;
            if (m_TerminalActive)
            {
-@@ -3258,15 +3479,11 @@ bool UiModel::Impl::IsCurrentChatSet()
+@@ -3258,15 +3486,11 @@ bool UiModel::Impl::IsCurrentChatSet()
    return (m_CurrentChatIndex >= 0);
  }
  
@@ -5874,7 +5920,7 @@ index d40b779..6cfc14f 100644
  }
  
  void UiModel::Impl::SetTerminalActive(bool p_TerminalActive)
-@@ -3293,6 +3510,36 @@ void UiModel::Impl::SetTerminalActive(bool p_TerminalActive)
+@@ -3293,6 +3517,36 @@ void UiModel::Impl::SetTerminalActive(bool p_TerminalActive)
    }
  }
  
@@ -5911,7 +5957,7 @@ index d40b779..6cfc14f 100644
  void UiModel::Impl::DesktopNotify(const std::string& p_Name, const std::string& p_Text)
  {
    static const bool desktopNotifyEnabled = UiConfig::GetBool("desktop_notify_enabled");
-@@ -3723,6 +3970,114 @@ void UiModel::Impl::SaveEditMessage()
+@@ -3723,6 +3977,114 @@ void UiModel::Impl::SaveEditMessage()
    Clear(false /*p_AllowUndo*/);
  }
  
@@ -6026,7 +6072,7 @@ index d40b779..6cfc14f 100644
  void UiModel::Impl::OnKeyCancel()
  {
    AnyUserKeyInput();
-@@ -3733,6 +4088,8 @@ void UiModel::Impl::OnKeyCancel()
+@@ -3733,6 +4095,8 @@ void UiModel::Impl::OnKeyCancel()
      SetEditMessageActive(false);
    }
  
@@ -6035,7 +6081,7 @@ index d40b779..6cfc14f 100644
    Clear(allowUndo);
  }
  
-@@ -4385,14 +4742,24 @@ void UiModel::Impl::AddQuoteFromSelectedMessage(ChatMessage& p_ChatMessage)
+@@ -4385,14 +4749,24 @@ void UiModel::Impl::AddQuoteFromSelectedMessage(ChatMessage& p_ChatMessage)
    const int messageOffset = m_MessageOffset[profileId][chatId];
    const std::unordered_map<std::string, ChatMessage>& messages = m_Messages[profileId][chatId];
  
@@ -6065,7 +6111,7 @@ index d40b779..6cfc14f 100644
    if (msg == messages.end())
    {
      LOG_WARNING("error finding selected message content");
-@@ -4571,6 +4938,16 @@ void UiModel::KeyHandler(wint_t p_Key)
+@@ -4571,6 +4945,16 @@ void UiModel::KeyHandler(wint_t p_Key)
    static wint_t keyHome = UiKeyConfig::GetKey("home");
  
    static wint_t keySendMsg = UiKeyConfig::GetKey("send_msg");
@@ -6082,7 +6128,7 @@ index d40b779..6cfc14f 100644
    static wint_t keyNextChat = UiKeyConfig::GetKey("next_chat");
    static wint_t keyPrevChat = UiKeyConfig::GetKey("prev_chat");
    static wint_t keyUnreadChat = UiKeyConfig::GetKey("unread_chat");
-@@ -4660,6 +5037,26 @@ void UiModel::KeyHandler(wint_t p_Key)
+@@ -4660,6 +5044,26 @@ void UiModel::KeyHandler(wint_t p_Key)
      std::unique_lock<owned_mutex> lock(m_ModelMutex);
      GetImpl().OnKeyToggleEmoji();
    }
@@ -6109,7 +6155,7 @@ index d40b779..6cfc14f 100644
    else if (p_Key == keyNextChat)
    {
      std::unique_lock<owned_mutex> lock(m_ModelMutex);
-@@ -4796,8 +5193,15 @@ void UiModel::KeyHandler(wint_t p_Key)
+@@ -4796,8 +5200,15 @@ void UiModel::KeyHandler(wint_t p_Key)
    }
    else if (p_Key == keyCancel)
    {
@@ -6127,7 +6173,7 @@ index d40b779..6cfc14f 100644
    }
    else if (p_Key == keyDecreaseListWidth)
    {
-@@ -5055,6 +5459,60 @@ std::string UiModel::GetContactPhoneLocked(const std::string& p_ProfileId, const
+@@ -5055,6 +5466,60 @@ std::string UiModel::GetContactPhoneLocked(const std::string& p_ProfileId, const
    return GetImpl().GetContactPhone(p_ProfileId, p_ChatId);
  }
  
@@ -6188,7 +6234,7 @@ index d40b779..6cfc14f 100644
  int UiModel::GetCurrentChatIndexLocked()
  {
    nc_assert(m_ModelMutex.owns_lock());
-@@ -5265,7 +5723,9 @@ std::vector<std::string> UiModel::SelectFile()
+@@ -5265,7 +5730,9 @@ std::vector<std::string> UiModel::SelectFile()
      static const bool filePickerPersistDir = UiConfig::GetBool("file_picker_persist_dir");
      if (!filePickerPersistDir || currentDir.empty())
      {
@@ -6199,7 +6245,7 @@ index d40b779..6cfc14f 100644
      }
  
      UiDialogParams params(this, "Send File", 0.75, 0.65);
-@@ -5284,9 +5744,18 @@ std::vector<std::string> UiModel::SelectFile()
+@@ -5284,9 +5751,18 @@ std::vector<std::string> UiModel::SelectFile()
  void UiModel::OnKeyTransfer()
  {
    // Pre-req
@@ -6218,7 +6264,7 @@ index d40b779..6cfc14f 100644
    }
  
    // Open modal dialog without model mutex held
-@@ -5760,7 +6229,29 @@ void UiModel::OnKeyCopy()
+@@ -5760,7 +6236,29 @@ void UiModel::OnKeyCopy()
  
  void UiModel::OnKeyPaste()
  {
@@ -6249,7 +6295,7 @@ index d40b779..6cfc14f 100644
    {
      // Open modal dialog without model mutex held
      static const bool confirmSendPastedImage = UiConfig::GetBool("confirm_send_pasted_image");
-@@ -5774,8 +6265,9 @@ void UiModel::OnKeyPaste()
+@@ -5774,8 +6272,9 @@ void UiModel::OnKeyPaste()
  
      static int index = 0;
      ++index;
