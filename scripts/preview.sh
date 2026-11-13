@@ -102,32 +102,9 @@ case "$mime" in
     ;;
   image/*) show "$f" "" ;;
   video/*)
-    if command -v ffmpeg >/dev/null 2>&1; then
-      # still frame at once, then the looping GIF (first 30 s, sound plays when it starts) replaces it when ready; o = system player
-      still="$(mktemp --suffix=.png)"; tmp="$(mktemp --suffix=.gif)"
-      ffmpeg -loglevel quiet -y -i "$f" -frames:v 1 -vf "scale='min(640,iw)':-2" "$still" </dev/null
-      clear
-      "$kitten" icat --clear --align=center "$still"
-      printf '\n  %s  -  animating ...  any key to close · o = open in player' "$(basename "$f")"
-      ffmpeg -loglevel quiet -y -t 30 -i "$f" -an -f gif \
-        -vf "fps=10,scale='min(480,iw)':-2:flags=bilinear,split[a][b];[a]palettegen=max_colors=128[p];[b][p]paletteuse" \
-        "$tmp" </dev/null &
-      fpid=$!
-      key=""
-      while kill -0 "$fpid" 2>/dev/null; do
-        if IFS= read -rsn1 -t 0.1 key; then
-          kill "$fpid" 2>/dev/null
-          [ "$key" = "o" ] || [ "$key" = "O" ] && xdg-open "$f" >/dev/null 2>&1 &
-          rm -f "$still"; exit 0
-        fi
-      done
-      rm -f "$still"
-      # sound starts together with the picture so they stay in sync
-      if command -v ffplay >/dev/null 2>&1; then
-        ffplay -nodisp -autoexit -loglevel quiet -t 30 "$f" </dev/null >/dev/null 2>&1 &
-        apid=$!
-      fi
-      show "$tmp" " · o = open in player"
+    if command -v ffmpeg >/dev/null 2>&1 && command -v python3 >/dev/null 2>&1; then
+      # built-in player: frames streamed to kitty, sound through ffplay, starts immediately
+      python3 "$(dirname "$(readlink -f "$0")")/vplay.py" "$f" || xdg-open "$f" >/dev/null 2>&1 &
     else
       xdg-open "$f" >/dev/null 2>&1 &
     fi
