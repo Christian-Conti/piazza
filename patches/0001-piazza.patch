@@ -14,7 +14,7 @@ index dd01aef..db072b3 100644
    src/uilistborderview.h
    src/uilistdialog.cpp
 diff --git a/lib/duchat/src/duchat.cpp b/lib/duchat/src/duchat.cpp
-index c0de985..7647c28 100644
+index c0de985..00e347f 100644
 --- a/lib/duchat/src/duchat.cpp
 +++ b/lib/duchat/src/duchat.cpp
 @@ -7,6 +7,10 @@
@@ -40,7 +40,7 @@ index c0de985..7647c28 100644
 +            reply.id = "Jim_0_quote_test";
 +            reply.senderId = "Jim_0";
 +            reply.text = "Quoted reply";
-+            reply.quotedId = s_Messages[s_GroupId].front().id;
++            reply.quotedId = (getenv("DUMMY_QUOTE_MISSING") != nullptr) ? std::string("missing_id") : s_Messages[s_GroupId].front().id;
 +            reply.timeSent = ((int64_t)(1237962000 + 2000) * 1000);
 +            reply.isOutgoing = false;
 +            reply.isRead = true;
@@ -7340,7 +7340,7 @@ index f5af738..2087136 100644
      m_Result = false;
      m_Running = false;
 diff --git a/src/uimodel.cpp b/src/uimodel.cpp
-index d40b779..598e0a0 100644
+index d40b779..32d8967 100644
 --- a/src/uimodel.cpp
 +++ b/src/uimodel.cpp
 @@ -8,6 +8,7 @@
@@ -7738,7 +7738,29 @@ index d40b779..598e0a0 100644
        }
        break;
  
-@@ -2497,12 +2755,7 @@ void UiModel::Impl::SortChats()
+@@ -2392,6 +2650,12 @@ void UiModel::Impl::MessageHandler(std::shared_ptr<ServiceMessage> p_ServiceMess
+ 
+             SetSelectMessageActive(true);
+             messageOffset = newMessageOffset;
++            if (msgId == m_JumpTargetId)
++            {
++              m_JumpTargetId.clear();
++              m_Notice.clear();
++            }
++
+             RequestMessagesCurrentChat();
+             UpdateHistory();
+           }
+@@ -2441,6 +2705,8 @@ bool UiModel::Impl::Process()
+ 
+ void UiModel::Impl::ProcessTimers()
+ {
++  ProcessJumpTarget();
++
+   static int64_t lastTimeMs = TimeUtil::GetCurrentTimeMSec();
+   int64_t nowTimeMs = TimeUtil::GetCurrentTimeMSec();
+   int64_t elapsedMs = nowTimeMs - lastTimeMs;
+@@ -2497,12 +2763,7 @@ void UiModel::Impl::SortChats()
  
    if (!m_ChatVec.empty())
    {
@@ -7752,7 +7774,7 @@ index d40b779..598e0a0 100644
      {
        for (size_t i = 0; i < m_ChatVec.size(); ++i)
        {
-@@ -2615,6 +2868,8 @@ void UiModel::Impl::UpdateChatInfoIsUnread(const std::string& p_ProfileId, const
+@@ -2615,6 +2876,8 @@ void UiModel::Impl::UpdateChatInfoIsUnread(const std::string& p_ProfileId, const
              m_TriggerTerminalBell = true;
            }
  
@@ -7761,7 +7783,7 @@ index d40b779..598e0a0 100644
            bool desktopNotify = false;
            if (m_TerminalActive)
            {
-@@ -3258,15 +3513,11 @@ bool UiModel::Impl::IsCurrentChatSet()
+@@ -3258,15 +3521,11 @@ bool UiModel::Impl::IsCurrentChatSet()
    return (m_CurrentChatIndex >= 0);
  }
  
@@ -7780,7 +7802,7 @@ index d40b779..598e0a0 100644
  }
  
  void UiModel::Impl::SetTerminalActive(bool p_TerminalActive)
-@@ -3293,6 +3544,36 @@ void UiModel::Impl::SetTerminalActive(bool p_TerminalActive)
+@@ -3293,6 +3552,36 @@ void UiModel::Impl::SetTerminalActive(bool p_TerminalActive)
    }
  }
  
@@ -7817,7 +7839,7 @@ index d40b779..598e0a0 100644
  void UiModel::Impl::DesktopNotify(const std::string& p_Name, const std::string& p_Text)
  {
    static const bool desktopNotifyEnabled = UiConfig::GetBool("desktop_notify_enabled");
-@@ -3723,6 +4004,275 @@ void UiModel::Impl::SaveEditMessage()
+@@ -3723,6 +4012,353 @@ void UiModel::Impl::SaveEditMessage()
    Clear(false /*p_AllowUndo*/);
  }
  
@@ -7887,9 +7909,87 @@ index d40b779..598e0a0 100644
 +  }
 +  else
 +  {
++    // not loaded: the cache search first, and as a safety net page back through the history until it shows up
++    LOG_INFO("jump to quoted %s: not loaded, searching", quotedId.c_str());
 +    SelectMessageById(p_MsgId);
-+    OnKeyJumpQuoted(); // not loaded yet: the protocol searches for it
++    m_JumpTargetId = quotedId;
++    m_JumpTargetChat = m_CurrentChat;
++    m_JumpTries = 0;
++    m_JumpLastStepMs = TimeUtil::GetCurrentTimeMSec();
++    SetNotice("Looking for the quoted message...");
++    OnKeyJumpQuoted();
 +  }
++}
++
++void UiModel::Impl::JumpToQuotedOfSelected()
++{
++  AnyUserKeyInput();
++  if (!GetSelectMessageActive() || GetEditMessageActive()) return;
++
++  const std::string& profileId = m_CurrentChat.first;
++  const std::string& chatId = m_CurrentChat.second;
++  const std::vector<std::string>& messageVec = m_MessageVec[profileId][chatId];
++  const int messageOffset = m_MessageOffset[profileId][chatId];
++  if (messageOffset >= (int)messageVec.size()) return;
++  JumpToQuotedOf(messageVec.at(messageOffset));
++}
++
++void UiModel::Impl::SetNotice(const std::string& p_Text)
++{
++  m_Notice = p_Text;
++  m_NoticeUntilMs = TimeUtil::GetCurrentTimeMSec() + 4000;
++  UpdateStatus();
++}
++
++std::string UiModel::Impl::GetNotice()
++{
++  if (m_Notice.empty()) return "";
++  if (TimeUtil::GetCurrentTimeMSec() > m_NoticeUntilMs)
++  {
++    m_Notice.clear();
++    return "";
++  }
++
++  return m_Notice;
++}
++
++// timer: while a quoted message is being looked for, check if it arrived, else load older history
++void UiModel::Impl::ProcessJumpTarget()
++{
++  if (m_JumpTargetId.empty()) return;
++
++  if (m_JumpTargetChat != m_CurrentChat)
++  {
++    m_JumpTargetId.clear(); // user switched chat
++    return;
++  }
++
++  const std::vector<std::string>& messageVec = m_MessageVec[m_CurrentChat.first][m_CurrentChat.second];
++  if (std::find(messageVec.begin(), messageVec.end(), m_JumpTargetId) != messageVec.end())
++  {
++    const std::string target = m_JumpTargetId;
++    m_JumpTargetId.clear();
++    m_Notice.clear();
++    SelectMessageById(target);
++    return;
++  }
++
++  const int64_t nowMs = TimeUtil::GetCurrentTimeMSec();
++  if ((nowMs - m_JumpLastStepMs) < 600) return;
++  m_JumpLastStepMs = nowMs;
++
++  if (++m_JumpTries > 25)
++  {
++    m_JumpTargetId.clear();
++    SetNotice("Quoted message not found in the local history");
++    return;
++  }
++
++  // step to the oldest loaded message so the next page of history is requested
++  int& messageOffset = m_MessageOffset[m_CurrentChat.first][m_CurrentChat.second];
++  messageOffset = std::max(0, (int)messageVec.size() - 1);
++  RequestMessagesCurrentChat();
++  UpdateHistory();
 +}
 +
 +void UiModel::Impl::OnMouse(int p_X, int p_Y, unsigned long p_State)
@@ -8093,7 +8193,7 @@ index d40b779..598e0a0 100644
  void UiModel::Impl::OnKeyCancel()
  {
    AnyUserKeyInput();
-@@ -3733,6 +4283,8 @@ void UiModel::Impl::OnKeyCancel()
+@@ -3733,6 +4369,8 @@ void UiModel::Impl::OnKeyCancel()
      SetEditMessageActive(false);
    }
  
@@ -8102,7 +8202,7 @@ index d40b779..598e0a0 100644
    Clear(allowUndo);
  }
  
-@@ -4385,14 +4937,24 @@ void UiModel::Impl::AddQuoteFromSelectedMessage(ChatMessage& p_ChatMessage)
+@@ -4385,14 +5023,24 @@ void UiModel::Impl::AddQuoteFromSelectedMessage(ChatMessage& p_ChatMessage)
    const int messageOffset = m_MessageOffset[profileId][chatId];
    const std::unordered_map<std::string, ChatMessage>& messages = m_Messages[profileId][chatId];
  
@@ -8132,7 +8232,7 @@ index d40b779..598e0a0 100644
    if (msg == messages.end())
    {
      LOG_WARNING("error finding selected message content");
-@@ -4571,6 +5133,16 @@ void UiModel::KeyHandler(wint_t p_Key)
+@@ -4571,6 +5219,16 @@ void UiModel::KeyHandler(wint_t p_Key)
    static wint_t keyHome = UiKeyConfig::GetKey("home");
  
    static wint_t keySendMsg = UiKeyConfig::GetKey("send_msg");
@@ -8149,7 +8249,7 @@ index d40b779..598e0a0 100644
    static wint_t keyNextChat = UiKeyConfig::GetKey("next_chat");
    static wint_t keyPrevChat = UiKeyConfig::GetKey("prev_chat");
    static wint_t keyUnreadChat = UiKeyConfig::GetKey("unread_chat");
-@@ -4625,7 +5197,17 @@ void UiModel::KeyHandler(wint_t p_Key)
+@@ -4625,7 +5283,17 @@ void UiModel::KeyHandler(wint_t p_Key)
    static wint_t keyAutoCompose = UiKeyConfig::GetKey("auto_compose");
    static wint_t keySelectMention = UiKeyConfig::GetKey("select_mention");
  
@@ -8168,7 +8268,7 @@ index d40b779..598e0a0 100644
    {
      std::unique_lock<owned_mutex> lock(m_ModelMutex);
      GetImpl().TerminalResize();
-@@ -4660,6 +5242,26 @@ void UiModel::KeyHandler(wint_t p_Key)
+@@ -4660,6 +5328,26 @@ void UiModel::KeyHandler(wint_t p_Key)
      std::unique_lock<owned_mutex> lock(m_ModelMutex);
      GetImpl().OnKeyToggleEmoji();
    }
@@ -8195,7 +8295,7 @@ index d40b779..598e0a0 100644
    else if (p_Key == keyNextChat)
    {
      std::unique_lock<owned_mutex> lock(m_ModelMutex);
-@@ -4796,8 +5398,15 @@ void UiModel::KeyHandler(wint_t p_Key)
+@@ -4796,8 +5484,15 @@ void UiModel::KeyHandler(wint_t p_Key)
    }
    else if (p_Key == keyCancel)
    {
@@ -8213,7 +8313,23 @@ index d40b779..598e0a0 100644
    }
    else if (p_Key == keyDecreaseListWidth)
    {
-@@ -4852,6 +5461,10 @@ void UiModel::KeyHandler(wint_t p_Key)
+@@ -4821,7 +5516,14 @@ void UiModel::KeyHandler(wint_t p_Key)
+   else if (p_Key == keyJumpQuoted)
+   {
+     std::unique_lock<owned_mutex> lock(m_ModelMutex);
+-    GetImpl().OnKeyJumpQuoted();
++    {
++      // selected message: jump to what it quotes (same path as tapping its quote card)
++      const std::string& pid = GetImpl().GetCurrentChat().first;
++      const std::string& cid = GetImpl().GetCurrentChat().second;
++      (void)pid;
++      (void)cid;
++      GetImpl().JumpToQuotedOfSelected();
++    }
+   }
+   else if (p_Key == keyJumpPinned)
+   {
+@@ -4852,6 +5554,10 @@ void UiModel::KeyHandler(wint_t p_Key)
    {
      OnKeyAutoCompose();
    }
@@ -8224,7 +8340,7 @@ index d40b779..598e0a0 100644
    else
    {
      std::unique_lock<owned_mutex> lock(m_ModelMutex);
-@@ -5055,6 +5668,72 @@ std::string UiModel::GetContactPhoneLocked(const std::string& p_ProfileId, const
+@@ -5055,6 +5761,78 @@ std::string UiModel::GetContactPhoneLocked(const std::string& p_ProfileId, const
    return GetImpl().GetContactPhone(p_ProfileId, p_ChatId);
  }
  
@@ -8232,6 +8348,12 @@ index d40b779..598e0a0 100644
 +{
 +  nc_assert(m_ModelMutex.owns_lock());
 +  return GetImpl().GetFocusList();
++}
++
++std::string UiModel::GetNoticeLocked()
++{
++  nc_assert(m_ModelMutex.owns_lock());
++  return GetImpl().GetNotice();
 +}
 +
 +void UiModel::SetListHitsLocked(const std::vector<UiHitRegion>& p_Hits)
@@ -8297,7 +8419,7 @@ index d40b779..598e0a0 100644
  int UiModel::GetCurrentChatIndexLocked()
  {
    nc_assert(m_ModelMutex.owns_lock());
-@@ -5265,7 +5944,9 @@ std::vector<std::string> UiModel::SelectFile()
+@@ -5265,7 +6043,9 @@ std::vector<std::string> UiModel::SelectFile()
      static const bool filePickerPersistDir = UiConfig::GetBool("file_picker_persist_dir");
      if (!filePickerPersistDir || currentDir.empty())
      {
@@ -8308,7 +8430,7 @@ index d40b779..598e0a0 100644
      }
  
      UiDialogParams params(this, "Send File", 0.75, 0.65);
-@@ -5284,9 +5965,18 @@ std::vector<std::string> UiModel::SelectFile()
+@@ -5284,9 +6064,18 @@ std::vector<std::string> UiModel::SelectFile()
  void UiModel::OnKeyTransfer()
  {
    // Pre-req
@@ -8327,7 +8449,7 @@ index d40b779..598e0a0 100644
    }
  
    // Open modal dialog without model mutex held
-@@ -5760,7 +6450,29 @@ void UiModel::OnKeyCopy()
+@@ -5760,7 +6549,29 @@ void UiModel::OnKeyCopy()
  
  void UiModel::OnKeyPaste()
  {
@@ -8358,7 +8480,7 @@ index d40b779..598e0a0 100644
    {
      // Open modal dialog without model mutex held
      static const bool confirmSendPastedImage = UiConfig::GetBool("confirm_send_pasted_image");
-@@ -5774,8 +6486,9 @@ void UiModel::OnKeyPaste()
+@@ -5774,8 +6585,9 @@ void UiModel::OnKeyPaste()
  
      static int index = 0;
      ++index;
@@ -8371,7 +8493,7 @@ index d40b779..598e0a0 100644
        MessageDialog("Warning", "Failed getting clipboard image.", 0.7, 5);
        return;
 diff --git a/src/uimodel.h b/src/uimodel.h
-index 4782732..4ba648b 100644
+index 4782732..12d2529 100644
 --- a/src/uimodel.h
 +++ b/src/uimodel.h
 @@ -7,6 +7,7 @@
@@ -8424,7 +8546,7 @@ index 4782732..4ba648b 100644
      void OnKeyNextChat();
      void OnKeyPrevChat();
      void OnKeyUnreadChat();
-@@ -171,7 +200,21 @@ private:
+@@ -171,7 +200,31 @@ private:
      void Cut();
      void Copy();
      void Paste();
@@ -8432,6 +8554,16 @@ index 4782732..4ba648b 100644
 +    bool GetSelectedAudioPath(std::string& p_Path);
 +    void OnMouse(int p_X, int p_Y, unsigned long p_State);
 +    void JumpToQuotedOf(const std::string& p_MsgId);
++    void JumpToQuotedOfSelected();
++    void ProcessJumpTarget(); // load-until-found for a tapped quote, driven by the timer
++    std::string GetNotice(); // short-lived message for the status line, "" when none
++    void SetNotice(const std::string& p_Text);
++    std::string m_JumpTargetId;
++    std::pair<std::string, std::string> m_JumpTargetChat;
++    int m_JumpTries = 0;
++    int64_t m_JumpLastStepMs = 0;
++    std::string m_Notice;
++    int64_t m_NoticeUntilMs = 0;
 +    void SelectMessageById(const std::string& p_MsgId);
 +    std::vector<UiHitRegion> m_HitList; // tabs and chat rows, set by the list view
 +    std::vector<UiHitRegion> m_HitHistory; // bubbles and quote cards, set by the history view
@@ -8446,7 +8578,7 @@ index 4782732..4ba648b 100644
      bool PreEditMsg(std::string& p_ProfileId, std::string& p_ChatId, std::string& p_MsgId,
                      std::string& p_MsgDialogText);
      void StartEditMsg(const std::string& p_ProfileId, const std::string& p_ChatId, const std::string& p_MsgId);
-@@ -216,6 +259,7 @@ private:
+@@ -216,6 +269,7 @@ private:
      void ResetMessageOffset();
      bool IsCurrentChatSet();
      bool SetCurrentChatIndexIfNotSet();
@@ -8454,7 +8586,7 @@ index 4782732..4ba648b 100644
      void DesktopNotify(const std::string& p_Name, const std::string& p_Text);
      void SetHistoryInteraction(bool p_HistoryInteraction);
      std::string GetSelectedMessageText();
-@@ -252,6 +296,12 @@ private:
+@@ -252,6 +306,12 @@ private:
  
      std::pair<std::string, std::string> m_CurrentChat;
      int m_CurrentChatIndex = -1;
@@ -8467,10 +8599,11 @@ index 4782732..4ba648b 100644
      static const std::pair<std::string, std::string> s_ChatNone;
  
      std::string m_EditMessageId;
-@@ -351,6 +401,17 @@ public:
+@@ -351,6 +411,18 @@ public:
    std::string GetContactNameLocked(const std::string& p_ProfileId, const std::string& p_ChatId);
    std::string GetContactPhoneLocked(const std::string& p_ProfileId, const std::string& p_ChatId);
    int GetCurrentChatIndexLocked();
++  std::string GetNoticeLocked();
 +  void SetListHitsLocked(const std::vector<UiHitRegion>& p_Hits);
 +  void SetHistoryHitsLocked(const std::vector<UiHitRegion>& p_Hits);
 +  bool GetSelectedMessagePreviewLocked(std::string& p_Name, std::string& p_Text, bool* p_Selecting = nullptr);
@@ -8502,7 +8635,7 @@ index d59c4e1..0834bef 100644
    wrefresh(stdscr);
    getmaxyx(stdscr, m_H, m_W);
 diff --git a/src/uistatusview.cpp b/src/uistatusview.cpp
-index 4ffaa59..58887e7 100644
+index 4ffaa59..1a00ef2 100644
 --- a/src/uistatusview.cpp
 +++ b/src/uistatusview.cpp
 @@ -7,8 +7,14 @@
@@ -8520,7 +8653,7 @@ index 4ffaa59..58887e7 100644
  #include "uicolorconfig.h"
  #include "uiconfig.h"
  #include "uimodel.h"
-@@ -20,7 +26,55 @@ UiStatusView::UiStatusView(const UiViewParams& p_Params)
+@@ -20,7 +26,63 @@ UiStatusView::UiStatusView(const UiViewParams& p_Params)
  
  void UiStatusView::Draw()
  {
@@ -8541,6 +8674,14 @@ index 4ffaa59..58887e7 100644
 +  }
 +
 +  // upload progress: spinner + bar when the protocol reports it, spinner + elapsed time otherwise
++  const std::string notice = m_Model->GetNoticeLocked();
++  static std::string lastNotice;
++  if (notice != lastNotice)
++  {
++    m_Dirty = true;
++    lastNotice = notice;
++  }
++
 +  std::wstring uploadLine;
 +  const std::vector<UploadProgress::Item> uploads = isReplying ? std::vector<UploadProgress::Item>() : UploadProgress::Snapshot();
 +  if (!uploads.empty())
@@ -8577,12 +8718,16 @@ index 4ffaa59..58887e7 100644
    m_Dirty = false;
  
    curs_set(0);
-@@ -42,7 +96,21 @@ void UiStatusView::Draw()
+@@ -42,7 +104,25 @@ void UiStatusView::Draw()
    wattron(m_Win, attribute | colorPair);
  
    std::wstring wstatus;
 -  if (currentChat.first.empty() && currentChat.second.empty())
-+  if (isReplying)
++  if (!notice.empty())
++  {
++    wstatus = StrUtil::TrimPadWString(L" \u24d8 " + StrUtil::ToWString(notice), m_W);
++  }
++  else if (isReplying)
 +  {
 +    if (!m_Model->GetEmojiEnabledLocked()) replyText = StrUtil::Textize(replyText);
 +    const std::wstring banner = L" \u21a9 " + StrUtil::ToWString(replyName) + L": " + StrUtil::ToWString(replyText);
