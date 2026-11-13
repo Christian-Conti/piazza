@@ -1,18 +1,20 @@
 diff --git a/CMakeLists.txt b/CMakeLists.txt
-index dd01aef..d05f7a6 100644
+index dd01aef..db072b3 100644
 --- a/CMakeLists.txt
 +++ b/CMakeLists.txt
-@@ -442,6 +442,8 @@ add_executable(nchat
+@@ -442,6 +442,10 @@ add_executable(nchat
    src/uikeydump.h
    src/uikeyinput.cpp
    src/uikeyinput.h
++  src/uiaudio.cpp
++  src/uiaudio.h
 +  src/uiimage.cpp
 +  src/uiimage.h
    src/uilistborderview.cpp
    src/uilistborderview.h
    src/uilistdialog.cpp
 diff --git a/lib/duchat/src/duchat.cpp b/lib/duchat/src/duchat.cpp
-index c0de985..be58962 100644
+index c0de985..836b921 100644
 --- a/lib/duchat/src/duchat.cpp
 +++ b/lib/duchat/src/duchat.cpp
 @@ -7,6 +7,10 @@
@@ -26,7 +28,34 @@ index c0de985..be58962 100644
  #include <algorithm>
  #include <iostream>
  #include <map>
-@@ -403,6 +407,7 @@ void DuChat::PerformRequest(std::shared_ptr<RequestMessage> p_RequestMessage)
+@@ -373,6 +377,26 @@ void DuChat::PerformRequest(std::shared_ptr<RequestMessage> p_RequestMessage)
+             t = t - 100;
+             s_Messages[s_GroupId].push_back(chatMessage);
+           }
++
++          // test aid: DUMMY_ATTACHMENT=/path/to/file adds a received message carrying that file (e.g. an audio clip)
++          const char* attachment = getenv("DUMMY_ATTACHMENT");
++          if (attachment != nullptr)
++          {
++            FileInfo fileInfo;
++            fileInfo.filePath = attachment;
++            fileInfo.fileStatus = FileStatusDownloaded;
++            fileInfo.fileId = "dummy-attachment";
++            fileInfo.fileType = "audio/ogg";
++            ChatMessage chatMessage;
++            chatMessage.id = "Dwight_0_" + std::to_string(t + 100000);
++            chatMessage.senderId = "Dwight_0";
++            chatMessage.text = "";
++            chatMessage.fileInfo = ProtocolUtil::FileInfoToHex(fileInfo);
++            chatMessage.timeSent = ((int64_t)(1237962000 + 1000) * 1000);
++            chatMessage.isOutgoing = false;
++            chatMessage.isRead = true;
++            s_Messages[s_GroupId].insert(s_Messages[s_GroupId].begin(), chatMessage);
++          }
+         }
+ 
+         m_MessageHandler(newChatsNotify);
+@@ -403,6 +427,7 @@ void DuChat::PerformRequest(std::shared_ptr<RequestMessage> p_RequestMessage)
          std::shared_ptr<SendMessageNotify> sendMessageNotify =
            std::make_shared<SendMessageNotify>(m_ProfileId);
          sendMessageNotify->success = true;
@@ -4560,11 +4589,250 @@ index bf7098e..c98e2bc 100644
    curs_set(0);
    timeout(0);
    EmojiList::Init();
+diff --git a/src/uiaudio.cpp b/src/uiaudio.cpp
+new file mode 100644
+index 0000000..90d2418
+--- /dev/null
++++ b/src/uiaudio.cpp
+@@ -0,0 +1,200 @@
++// uiaudio.cpp
++
++#include "uiaudio.h"
++
++#include <fcntl.h>
++#include <signal.h>
++#include <spawn.h>
++#include <sys/wait.h>
++#include <unistd.h>
++
++#include <algorithm>
++#include <cstdio>
++#include <cstdlib>
++#include <map>
++
++#include "strutil.h"
++#include "timeutil.h"
++
++extern char** environ;
++
++namespace UiAudio
++{
++static pid_t s_Pid = -1;
++static std::string s_Path;
++static bool s_Paused = false;
++static int64_t s_StartMs = 0;
++static int64_t s_PausedAtMs = 0;
++static int64_t s_PausedTotalMs = 0;
++static std::map<std::string, int> s_Durations;
++
++static std::string Ext(const std::string& p_Path)
++{
++  const size_t dot = p_Path.rfind('.');
++  std::string ext = (dot == std::string::npos) ? "" : p_Path.substr(dot + 1);
++  std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
++  return ext;
++}
++
++bool IsAudioPath(const std::string& p_Path)
++{
++  const std::string ext = Ext(p_Path);
++  return (ext == "oga") || (ext == "ogg") || (ext == "opus") || (ext == "mp3") || (ext == "m4a") || (ext == "aac") ||
++    (ext == "amr") || (ext == "wav") || (ext == "flac");
++}
++
++bool IsVoiceNotePath(const std::string& p_Path)
++{
++  const std::string ext = Ext(p_Path);
++  return (ext == "oga") || (ext == "ogg") || (ext == "opus");
++}
++
++// shortcut: blocking ffprobe on first sight of a file, cached afterwards
++int Duration(const std::string& p_Path)
++{
++  auto it = s_Durations.find(p_Path);
++  if (it != s_Durations.end()) return it->second;
++
++  int seconds = 0;
++  const std::string cmd = "ffprobe -v error -show_entries format=duration -of csv=p=0 '" +
++    StrUtil::EscapeSingleQuote(p_Path) + "' 2>/dev/null";
++  FILE* pipe = popen(cmd.c_str(), "r");
++  if (pipe != nullptr)
++  {
++    char buf[64] = { 0 };
++    if (fgets(buf, sizeof(buf), pipe) != nullptr) seconds = (int)(atof(buf) + 0.5);
++    pclose(pipe);
++  }
++
++  s_Durations[p_Path] = seconds;
++  return seconds;
++}
++
++static int64_t ElapsedMs()
++{
++  const int64_t now = s_Paused ? s_PausedAtMs : TimeUtil::GetCurrentTimeMSec();
++  return std::max<int64_t>(0, now - s_StartMs - s_PausedTotalMs);
++}
++
++State GetState(const std::string& p_Path)
++{
++  State state;
++  if ((s_Pid > 0) && (s_Path == p_Path))
++  {
++    state.current = true;
++    state.paused = s_Paused;
++    state.elapsedSec = (int)(ElapsedMs() / 1000);
++  }
++
++  return state;
++}
++
++bool IsPlaying()
++{
++  return (s_Pid > 0) && !s_Paused;
++}
++
++void Stop()
++{
++  if (s_Pid > 0)
++  {
++    kill(s_Pid, SIGCONT);
++    kill(s_Pid, SIGTERM);
++    int status = 0;
++    waitpid(s_Pid, &status, 0);
++  }
++
++  s_Pid = -1;
++  s_Path.clear();
++  s_Paused = false;
++}
++
++static void StartPlayer(const std::string& p_Path)
++{
++  static const bool registered = (std::atexit(Stop) == 0);
++  (void)registered;
++
++  // PIAZZA_PLAYER overrides the player; otherwise ffplay, pw-play or paplay, whichever exists
++  std::string player;
++  const char* custom = getenv("PIAZZA_PLAYER");
++  if ((custom != nullptr) && (custom[0] != '\0'))
++  {
++    player = custom;
++  }
++  else if (system("command -v ffplay >/dev/null 2>&1") == 0)
++  {
++    player = "ffplay -nodisp -autoexit -loglevel quiet";
++  }
++  else if (system("command -v pw-play >/dev/null 2>&1") == 0)
++  {
++    player = "pw-play";
++  }
++  else if (system("command -v paplay >/dev/null 2>&1") == 0)
++  {
++    player = "paplay";
++  }
++  else
++  {
++    return;
++  }
++
++  const std::string cmd = "exec " + player + " '" + StrUtil::EscapeSingleQuote(p_Path) + "'";
++  posix_spawn_file_actions_t actions;
++  posix_spawn_file_actions_init(&actions);
++  posix_spawn_file_actions_addopen(&actions, 0, "/dev/null", O_RDONLY, 0);
++  posix_spawn_file_actions_addopen(&actions, 1, "/dev/null", O_WRONLY, 0);
++  posix_spawn_file_actions_addopen(&actions, 2, "/dev/null", O_WRONLY, 0);
++  const char* argv[] = { "sh", "-c", cmd.c_str(), nullptr };
++  pid_t pid = -1;
++  if (posix_spawnp(&pid, "sh", &actions, nullptr, const_cast<char* const*>(argv), environ) == 0)
++  {
++    s_Pid = pid;
++    s_Path = p_Path;
++    s_Paused = false;
++    s_StartMs = TimeUtil::GetCurrentTimeMSec();
++    s_PausedTotalMs = 0;
++  }
++
++  posix_spawn_file_actions_destroy(&actions);
++}
++
++void Toggle(const std::string& p_Path)
++{
++  if ((s_Pid > 0) && (s_Path == p_Path))
++  {
++    if (s_Paused)
++    {
++      kill(s_Pid, SIGCONT);
++      s_PausedTotalMs += TimeUtil::GetCurrentTimeMSec() - s_PausedAtMs;
++      s_Paused = false;
++    }
++    else
++    {
++      kill(s_Pid, SIGSTOP);
++      s_PausedAtMs = TimeUtil::GetCurrentTimeMSec();
++      s_Paused = true;
++    }
++
++    return;
++  }
++
++  Stop();
++  StartPlayer(p_Path);
++}
++
++bool Poll()
++{
++  if (s_Pid <= 0) return false;
++
++  int status = 0;
++  if (waitpid(s_Pid, &status, WNOHANG) == s_Pid)
++  {
++    s_Pid = -1;
++    s_Path.clear();
++    s_Paused = false;
++    return true;
++  }
++
++  return false;
++}
++}
+diff --git a/src/uiaudio.h b/src/uiaudio.h
+new file mode 100644
+index 0000000..59a9ae8
+--- /dev/null
++++ b/src/uiaudio.h
+@@ -0,0 +1,27 @@
++// uiaudio.h
++//
++// In-chat audio playback: one background player process (ffplay by default), pause/resume with
++// SIGSTOP/SIGCONT, progress derived from the clock.
++
++#pragma once
++
++#include <string>
++
++namespace UiAudio
++{
++struct State
++{
++  bool current = false; // this path is the one loaded in the player
++  bool paused = false;
++  int elapsedSec = 0;
++};
++
++bool IsAudioPath(const std::string& p_Path);
++bool IsVoiceNotePath(const std::string& p_Path); // small voice-message formats worth auto-downloading
++int Duration(const std::string& p_Path); // seconds, 0 if unknown (needs ffprobe); cached
++State GetState(const std::string& p_Path);
++bool IsPlaying(); // a track is loaded and not paused: the UI should keep redrawing
++void Toggle(const std::string& p_Path); // start / pause / resume
++void Stop();
++bool Poll(); // reap a finished player; true when playback just ended
++}
 diff --git a/src/uicolorconfig.cpp b/src/uicolorconfig.cpp
-index 5dadae9..36659ee 100644
+index 5dadae9..69afbd8 100644
 --- a/src/uicolorconfig.cpp
 +++ b/src/uicolorconfig.cpp
-@@ -27,70 +27,97 @@ void UiColorConfig::Init()
+@@ -27,70 +27,101 @@ void UiColorConfig::Init()
      start_color();
    }
  
@@ -4581,14 +4849,12 @@ index 5dadae9..36659ee 100644
 +  std::map<std::string, std::string> defaultConfig =
    {
 -    { "top_attr", "reverse" },
--    { "top_color_bg", "" },
--    { "top_color_fg", "" },
++    { "top_attr", "bold" },
+     { "top_color_bg", "" },
+     { "top_color_fg", "" },
 -    { "help_attr", "reverse" },
 -    { "help_color_bg", "black" },
 -    { "help_color_fg", "white" },
-+    { "top_attr", "bold" },
-+    { "top_color_bg", slate },
-+    { "top_color_fg", dark },
 +    { "help_attr", "" },
 +    { "help_color_bg", "" },
 +    { "help_color_fg", slate },
@@ -4652,6 +4918,10 @@ index 5dadae9..36659ee 100644
  
      { "dialog_attr", "" },
 -    { "dialog_attr_selected", "reverse" },
++    { "dialog_border_color_fg", slate },
++    { "dialog_border_color_bg", "" },
++    { "meta_color_fg", slate },
++    { "meta_color_bg", "" },
 +    { "dialog_attr_selected", "bold" },
 +    { "dialog_selected_color_fg", dark },
 +    { "dialog_selected_color_bg", "yellow" },
@@ -4694,7 +4964,7 @@ index 5dadae9..36659ee 100644
    const std::string configPath(FileUtil::GetApplicationDir() + std::string("/color.conf"));
    m_Config = Config(configPath, defaultConfig);
  
-@@ -253,6 +280,13 @@ int UiColorConfig::GetColorId(const std::string& p_Str)
+@@ -253,6 +284,13 @@ int UiColorConfig::GetColorId(const std::string& p_Str)
  
    if (p_Str.empty()) return -1;
  
@@ -4731,7 +5001,7 @@ index a852e2b..62b3b85 100644
      { "mark_read_any_chat", "0" },
      { "mark_read_on_view", "1" },
 diff --git a/src/uidialog.cpp b/src/uidialog.cpp
-index 4d18550..bba4c50 100644
+index 4d18550..462ac99 100644
 --- a/src/uidialog.cpp
 +++ b/src/uidialog.cpp
 @@ -7,6 +7,8 @@
@@ -4764,6 +5034,41 @@ index 4d18550..bba4c50 100644
  void UiDialog::SetFooter(const std::string& p_Footer)
  {
    m_Footer = p_Footer;
+@@ -70,14 +79,33 @@ void UiDialog::DrawBorder()
+   wbkgd(m_BorderWin, colorPair | ' ');
+   wattron(m_BorderWin, attribute | colorPair);
+ 
+-  wborder(m_BorderWin, 0, 0, 0, 0, 0, 0, 0, 0);
++  // rounded corners, thin lines, in the muted border color
++  static int borderPair = UiColorConfig::GetColorPair("dialog_border_color");
++  wattroff(m_BorderWin, attribute | colorPair);
++  wattron(m_BorderWin, borderPair);
++  {
++    cchar_t ls, rs, ts, bs, tl, tr, bl, br;
++    setcchar(&ls, L"\u2502", 0, 0, nullptr);
++    setcchar(&rs, L"\u2502", 0, 0, nullptr);
++    setcchar(&ts, L"\u2500", 0, 0, nullptr);
++    setcchar(&bs, L"\u2500", 0, 0, nullptr);
++    setcchar(&tl, L"\u256d", 0, 0, nullptr);
++    setcchar(&tr, L"\u256e", 0, 0, nullptr);
++    setcchar(&bl, L"\u2570", 0, 0, nullptr);
++    setcchar(&br, L"\u256f", 0, 0, nullptr);
++    wborder_set(m_BorderWin, &ls, &rs, &ts, &bs, &tl, &tr, &bl, &br);
++  }
++  wattroff(m_BorderWin, borderPair);
++  wattron(m_BorderWin, attribute | colorPair);
+   const int maxTextWidth = m_W - 2;
+ 
+   std::string title = " " + m_Title.substr(0, maxTextWidth) + " ";
+   std::wstring wtitle = StrUtil::ToWString(title);
+   int titlex = std::max(0, (m_W - (int)wtitle.size()) / 2) + 2;
+   int titlew = std::min((int)wtitle.size(), m_W);
++  wattron(m_BorderWin, A_BOLD);
+   mvwaddnwstr(m_BorderWin, 0, titlex, wtitle.c_str(), titlew);
++  wattroff(m_BorderWin, A_BOLD);
+ 
+   if (!m_Footer.empty())
+   {
 diff --git a/src/uidialog.h b/src/uidialog.h
 index 69935ea..e9220a9 100644
 --- a/src/uidialog.h
@@ -4909,6 +5214,89 @@ index 705aa8c..ab165a0 100644
    bool m_HasNoneOption = false;
    bool m_HasLimitedEmojis = false;
    bool m_HasAvailableEmojisPending = false;
+diff --git a/src/uientryview.cpp b/src/uientryview.cpp
+index 4bdb3a5..ed0f102 100644
+--- a/src/uientryview.cpp
++++ b/src/uientryview.cpp
+@@ -8,6 +8,7 @@
+ #include "uientryview.h"
+ 
+ #include <algorithm>
++#include <vector>
+ 
+ #include "strutil.h"
+ #include "uicolorconfig.h"
+@@ -16,6 +17,16 @@
+ UiEntryView::UiEntryView(const UiViewParams& p_Params)
+   : UiViewBase(p_Params)
+ {
++  if (m_Enabled && (m_X >= 2)) m_PromptWin = newwin(m_H, 2, m_Y, m_X - 2);
++}
++
++UiEntryView::~UiEntryView()
++{
++  if (m_PromptWin != nullptr)
++  {
++    delwin(m_PromptWin);
++    m_PromptWin = nullptr;
++  }
+ }
+ 
+ void UiEntryView::Draw()
+@@ -48,6 +59,37 @@ void UiEntryView::Draw()
+   wbkgd(m_Win, attribute | colorPair | ' ');
+   wattron(m_Win, attribute | colorPair);
+ 
++  // prompt glyph in the service color, and a hint while nothing is typed
++  const std::pair<std::string, std::string>& openChat = m_Model->GetCurrentChatLocked();
++  if (m_PromptWin != nullptr)
++  {
++    static std::vector<int> promptPairs = []()
++    {
++      std::vector<int> pairs;
++      for (int k = 0; k < 6; ++k) pairs.push_back(UiColorConfig::GetColorPair("history_name_sent_k" + std::to_string(k) + "_color"));
++      return pairs;
++    }();
++    werase(m_PromptWin);
++    wbkgd(m_PromptWin, attribute | colorPair | ' ');
++    if (!openChat.first.empty())
++    {
++      const int kind = std::min(std::max(m_Model->GetProfileKindLocked(openChat.first), 0), 5);
++      wattron(m_PromptWin, A_BOLD | promptPairs.at(kind));
++      mvwaddnwstr(m_PromptWin, 0, 0, L"\u276f", 1);
++      wattroff(m_PromptWin, A_BOLD | promptPairs.at(kind));
++    }
++
++    wrefresh(m_PromptWin);
++  }
++
++  if (input.empty() && !openChat.first.empty())
++  {
++    static int metaPair = UiColorConfig::GetColorPair("meta_color");
++    wattron(m_Win, metaPair);
++    mvwaddnwstr(m_Win, 0, 0, L"Write a message...", 18);
++    wattroff(m_Win, metaPair);
++  }
++
+   int yoffs = (cy < (m_H - 1)) ? 0 : (cy - (m_H - 1));
+ 
+   for (int i = 0; i < m_H; ++i)
+diff --git a/src/uientryview.h b/src/uientryview.h
+index f08b8ed..44858f9 100644
+--- a/src/uientryview.h
++++ b/src/uientryview.h
+@@ -14,9 +14,11 @@ class UiEntryView : public UiViewBase
+ public:
+   UiEntryView(const UiViewParams& p_Params);
+ 
++  virtual ~UiEntryView();
+   virtual void Draw();
+ 
+ private:
++  WINDOW* m_PromptWin = nullptr; // "❯" prompt, left of the text area
+   int m_CursX = 0;
+   int m_CursY = 0;
+ };
 diff --git a/src/uihelpview.cpp b/src/uihelpview.cpp
 index 32e8e82..1ad28f3 100644
 --- a/src/uihelpview.cpp
@@ -4932,19 +5320,22 @@ index 32e8e82..1ad28f3 100644
      return helpItems;
    }();
 diff --git a/src/uihistoryview.cpp b/src/uihistoryview.cpp
-index ef9da40..15817b3 100644
+index ef9da40..b52b220 100644
 --- a/src/uihistoryview.cpp
 +++ b/src/uihistoryview.cpp
-@@ -7,6 +7,8 @@
+@@ -7,6 +7,11 @@
  
  #include "uihistoryview.h"
  
++#include <ctime>
++
++#include "uiaudio.h"
 +#include "uiimage.h"
 +
  #include "appconfig.h"
  #include "apputil.h"
  #include "fileutil.h"
-@@ -21,6 +23,14 @@
+@@ -21,6 +26,14 @@
  UiHistoryView::UiHistoryView(const UiViewParams& p_Params)
    : UiViewBase(p_Params)
  {
@@ -4959,8 +5350,11 @@ index ef9da40..15817b3 100644
    if (m_Enabled)
    {
      int hpad = (m_X == 0) ? 0 : 1;
-@@ -32,9 +42,9 @@ UiHistoryView::UiHistoryView(const UiViewParams& p_Params)
+@@ -30,17 +43,24 @@ UiHistoryView::UiHistoryView(const UiViewParams& p_Params)
+     m_PaddedH = m_H - (vpad * 2);
+     m_PaddedW = m_W - (hpad * 2);
      m_PaddedWin = newwin(m_PaddedH, m_PaddedW, paddedY, paddedX);
++    m_RuleWin = newwin(1, m_W, m_Y, m_X);
  
      static int attributeTextNormal = UiColorConfig::GetAttribute("history_text_attr");
 -    static int colorPairTextRecv = UiColorConfig::GetColorPair("history_text_recv_color");
@@ -4971,7 +5365,19 @@ index ef9da40..15817b3 100644
      wrefresh(m_Win);
    }
  }
-@@ -55,15 +65,32 @@ void UiHistoryView::Draw()
+ 
+ UiHistoryView::~UiHistoryView()
+ {
++  if (m_RuleWin != nullptr)
++  {
++    delwin(m_RuleWin);
++    m_RuleWin = nullptr;
++  }
++
+   if (m_PaddedWin != nullptr)
+   {
+     delwin(m_PaddedWin);
+@@ -55,15 +75,32 @@ void UiHistoryView::Draw()
  
    curs_set(0);
  
@@ -5009,7 +5415,7 @@ index ef9da40..15817b3 100644
    static int colorPairNameRecv = UiColorConfig::GetColorPair("history_name_recv_color");
    static int attributeNameNormal = UiColorConfig::GetAttribute("history_name_attr");
    static int attributeNameSelected = UiColorConfig::GetAttribute("history_name_attr_selected");
-@@ -73,6 +100,25 @@ void UiHistoryView::Draw()
+@@ -73,6 +110,25 @@ void UiHistoryView::Draw()
    static std::wstring quoteIndicator = L"> ";
  
    std::pair<std::string, std::string>& currentChat = m_Model->GetCurrentChatLocked();
@@ -5035,7 +5441,7 @@ index ef9da40..15817b3 100644
    const bool emojiEnabled = m_Model->GetEmojiEnabledLocked();
    static const bool developerMode = AppUtil::GetDeveloperMode();
  
-@@ -83,10 +129,22 @@ void UiHistoryView::Draw()
+@@ -83,10 +139,22 @@ void UiHistoryView::Draw()
    int messageOffset = std::max(m_Model->GetMessageOffsetLocked(currentChat.first, currentChat.second), 0);
  
    werase(m_PaddedWin);
@@ -5059,7 +5465,7 @@ index ef9da40..15817b3 100644
    bool firstMessage = true;
    int y = m_PaddedH - 1;
    for (auto it = std::next(messageVec.begin(), messageOffset); it != messageVec.end(); ++it)
-@@ -105,20 +163,9 @@ void UiHistoryView::Draw()
+@@ -105,20 +173,9 @@ void UiHistoryView::Draw()
      int attributeText = isSelectedMessage ? attributeTextSelected : attributeTextNormal;
      int colorPairText = [&]()
      {
@@ -5083,7 +5489,7 @@ index ef9da40..15817b3 100644
      }();
  
      std::vector<std::wstring> wlines;
-@@ -131,16 +178,19 @@ void UiHistoryView::Draw()
+@@ -131,16 +188,19 @@ void UiHistoryView::Draw()
          text = StrUtil::Textize(text);
        }
  
@@ -5104,7 +5510,7 @@ index ef9da40..15817b3 100644
          if (!quotedIt->second.text.empty())
          {
            quotedText = StrUtil::Split(quotedIt->second.text, '\n').at(0);
-@@ -161,17 +211,22 @@ void UiHistoryView::Draw()
+@@ -161,17 +221,22 @@ void UiHistoryView::Draw()
          quotedText = "";
        }
  
@@ -5133,7 +5539,7 @@ index ef9da40..15817b3 100644
      if (!msg.fileInfo.empty())
      {
        FileInfo fileInfo = ProtocolUtil::FileInfoFromHex(msg.fileInfo);
-@@ -181,10 +236,22 @@ void UiHistoryView::Draw()
+@@ -181,10 +246,24 @@ void UiHistoryView::Draw()
          (AppConfig::GetNum("attachment_prefetch") == AttachmentPrefetchAll);
        static const bool isAttachmentPrefetchSelected =
          (AppConfig::GetNum("attachment_prefetch") == AttachmentPrefetchSelected);
@@ -5142,14 +5548,16 @@ index ef9da40..15817b3 100644
 +      // Telegram names not-yet-downloaded files "[Photo]", "[Sticker]", "[Animation]"; WhatsApp gives a real extension.
 +      // GIFs are mp4 animations and need ffmpeg for the thumbnail; plain videos are only fetched on selection.
 +      const std::string& attachName = fileInfo.filePath;
-+      const bool isInlineMedia = UiImage::Enabled() &&
++      // voice messages are tiny: fetch them too, so Space/Enter can play them right away
++      const bool isVoiceNote = UiAudio::IsVoiceNotePath(attachName) || (attachName == "[VoiceNote]");
++      const bool isInlineMedia = isVoiceNote || (UiImage::Enabled() &&
 +        (UiImage::IsImagePath(attachName) || (attachName == "[Photo]") || (attachName == "[Sticker]") ||
-+         (UiImage::CanThumbnailVideos() && (attachName == "[Animation]")));
-+      if (isAttachmentPrefetchAll || isInlineMedia || (isSelectedMessage && isAttachmentPrefetchSelected))
++         (UiImage::CanThumbnailVideos() && (attachName == "[Animation]"))));
++      if (isAttachmentPrefetchAll || isInlineMedia || isVoiceNote || (isSelectedMessage && isAttachmentPrefetchSelected))
        {
          if (!UiModel::IsAttachmentDownloaded(fileInfo) && UiModel::IsAttachmentDownloadable(fileInfo))
          {
-+          if (isInlineMedia && !isAttachmentPrefetchAll && !(isSelectedMessage && isAttachmentPrefetchSelected))
++          if ((isInlineMedia || isVoiceNote) && !isAttachmentPrefetchAll && !(isSelectedMessage && isAttachmentPrefetchSelected))
 +          {
 +            UiImage::MarkAutoDownload(fileInfo.fileId);
 +          }
@@ -5157,14 +5565,36 @@ index ef9da40..15817b3 100644
            m_Model->DownloadAttachmentLocked(currentChat.first, currentChat.second, *it,
                                              fileInfo.fileId, DownloadFileActionNone);
            fileInfo = ProtocolUtil::FileInfoFromHex(msg.fileInfo);
-@@ -222,6 +289,20 @@ void UiHistoryView::Draw()
+@@ -221,7 +300,42 @@ void UiHistoryView::Draw()
+       }
  
        std::wstring fileStr = attachmentIndicator + StrUtil::ToWString(fileName + fileStatus);
++
++      if ((fileInfo.fileStatus == FileStatusDownloaded) && UiAudio::IsAudioPath(fileInfo.filePath))
++      {
++        // inline player: [play/pause] [bar with position] [elapsed/total]
++        const UiAudio::State audio = UiAudio::GetState(fileInfo.filePath);
++        const int total = UiAudio::Duration(fileInfo.filePath);
++        const int elapsed = (total > 0) ? std::min(audio.elapsedSec, total) : audio.elapsedSec;
++        auto fmt = [](int sec) { return std::to_string(sec / 60) + ":" + (sec % 60 < 10 ? "0" : "") + std::to_string(sec % 60); };
++        const std::wstring times = StrUtil::ToWString(fmt(elapsed) + (total > 0 ? "/" + fmt(total) : ""));
++        const std::wstring icon = (audio.current && !audio.paused) ? L"\u23f8 " : L"\u25b6 ";
++        const int barW = std::max(6, bubbleW - 2 - StrUtil::WStringWidth(attachmentIndicator + icon + times) - 2);
++        const int pos = (total > 0) ? std::min(barW - 1, (elapsed * (barW - 1)) / total) : 0;
++        std::wstring bar;
++        for (int i = 0; i < barW; ++i) bar += (i < pos) ? L'\u2501' : (i == pos) ? L'\u25cf' : L'\u2500';
++        fileStr = attachmentIndicator + icon + bar + L" " + times;
++      }
++
        wlines.insert(wlines.begin(), fileStr);
++
++      if ((fileInfo.fileStatus == FileStatusDownloaded) && UiImage::IsAutoDownload(fileInfo.fileId))
++      {
++        UiImage::RememberAutoFile(fileInfo.filePath); // session-only copy, deleted at exit
++      }
 +
 +      if (UiImage::Enabled() && (fileInfo.fileStatus == FileStatusDownloaded))
 +      {
-+        if (UiImage::IsAutoDownload(fileInfo.fileId)) UiImage::RememberAutoFile(fileInfo.filePath);
 +
 +        if (UiImage::IsImagePath(fileInfo.filePath)) imgPath = UiImage::DisplayablePath(fileInfo.filePath);
 +        else if (UiImage::IsVideoPath(fileInfo.filePath)) imgPath = UiImage::VideoThumbnail(fileInfo.filePath);
@@ -5178,7 +5608,7 @@ index ef9da40..15817b3 100644
      }
  
      // Reactions
-@@ -289,7 +370,7 @@ void UiHistoryView::Draw()
+@@ -289,7 +403,7 @@ void UiHistoryView::Draw()
              reactionsText = StrUtil::Textize(reactionsText);
            }
  
@@ -5187,7 +5617,7 @@ index ef9da40..15817b3 100644
            std::wstring reactions = StrUtil::ToWString(reactionsText);
            if (StrUtil::WStringWidth(reactions) > maxReactionsLen)
            {
-@@ -306,7 +387,7 @@ void UiHistoryView::Draw()
+@@ -306,7 +420,7 @@ void UiHistoryView::Draw()
        }
      }
  
@@ -5196,7 +5626,7 @@ index ef9da40..15817b3 100644
      if (firstMessage && ((int)wlines.size() > maxMessageLines))
      {
        wlines.resize(maxMessageLines - 1);
-@@ -314,8 +395,38 @@ void UiHistoryView::Draw()
+@@ -314,8 +428,38 @@ void UiHistoryView::Draw()
        reactionLines = 0;
      }
  
@@ -5235,7 +5665,7 @@ index ef9da40..15817b3 100644
        bool isAttachment = (wline->rfind(attachmentIndicator, 0) == 0);
        bool isQuote = (wline->rfind(quoteIndicator, 0) == 0);
        bool isReaction = (reactionLines == 1) && (std::distance(wline, wlines.rbegin()) == 0);
-@@ -324,29 +435,33 @@ void UiHistoryView::Draw()
+@@ -324,29 +468,33 @@ void UiHistoryView::Draw()
        {
          wattron(m_PaddedWin, attributeText | colorPairTextAttachment);
        }
@@ -5280,7 +5710,7 @@ index ef9da40..15817b3 100644
        }
        else if (isReaction)
        {
-@@ -362,6 +477,9 @@ void UiHistoryView::Draw()
+@@ -362,6 +510,9 @@ void UiHistoryView::Draw()
  
      if (y < 0) break;
  
@@ -5290,27 +5720,131 @@ index ef9da40..15817b3 100644
      int attributeName = isSelectedMessage ? attributeNameSelected : attributeNameNormal;
      int colorPairName = [&]()
      {
-@@ -419,8 +537,10 @@ void UiHistoryView::Draw()
+@@ -398,7 +549,12 @@ void UiHistoryView::Draw()
+     {
+       if (msg.timeSent != std::numeric_limits<int64_t>::max())
+       {
+-        wtime = L" (" + StrUtil::ToWString(TimeUtil::GetTimeString(msg.timeSent, false /* p_IsExport */)) + L")";
++        const time_t tt = (time_t)(msg.timeSent / 1000);
++        struct tm tmv;
++        char buf[16] = { 0 };
++        localtime_r(&tt, &tmv);
++        strftime(buf, sizeof(buf), "%H:%M", &tmv);
++        wtime = L"  " + StrUtil::ToWString(std::string(buf));
+       }
+     }
+ 
+@@ -419,14 +575,76 @@ void UiHistoryView::Draw()
          L" user " + StrUtil::ToWString(msg.senderId);
      }
  
 -    std::wstring wdisp = StrUtil::TrimPadWString(wheader, m_PaddedW);
 -    mvwaddnwstr(m_PaddedWin, y, 0, wdisp.c_str(), std::min((int)wdisp.size(), m_PaddedW));
-+    // sent: header right-aligned above the bubble; received: left-aligned
-+    const int hx = msg.isOutgoing ? std::max(bx, bx + bubbleW - StrUtil::WStringWidth(wheader)) : bx;
-+    std::wstring wdisp = StrUtil::TrimPadWString(wheader, m_PaddedW - hx);
-+    mvwaddnwstr(m_PaddedWin, y, hx, wdisp.c_str(), std::min((int)wdisp.size(), m_PaddedW - hx));
++    // sent: header right-aligned above the bubble; received: left-aligned. Name in color, time/receipt muted.
++    static int metaPairHeader = UiColorConfig::GetColorPair("meta_color");
++    const std::wstring wmeta = wheader.substr(wsender.size());
++    const int headerW = StrUtil::WStringWidth(wheader);
++    const int hx = msg.isOutgoing ? std::max(bx, bx + bubbleW - headerW) : bx;
++    const int room = std::max(0, m_PaddedW - hx);
++    const std::wstring wnameDisp = wsender.substr(0, room);
++    mvwaddnwstr(m_PaddedWin, y, hx, wnameDisp.c_str(), (int)wnameDisp.size());
++    wattroff(m_PaddedWin, attributeName | colorPairName);
++    wattron(m_PaddedWin, metaPairHeader);
++    const int metaX = hx + StrUtil::WStringWidth(wnameDisp);
++    if (metaX < m_PaddedW)
++    {
++      const std::wstring wmetaDisp = wmeta.substr(0, std::max(0, m_PaddedW - metaX));
++      mvwaddnwstr(m_PaddedWin, y, metaX, wmetaDisp.c_str(), (int)wmetaDisp.size());
++    }
++
++    wattroff(m_PaddedWin, metaPairHeader);
++    wattron(m_PaddedWin, attributeName | colorPairName); // balanced by the wattroff below
  
      wattroff(m_PaddedWin, attributeName | colorPairName);
  
-@@ -434,6 +554,7 @@ void UiHistoryView::Draw()
+     ++m_HistoryShowCount;
+ 
+-    if (--y < 0) break;
++    if (--y < 0) break; // blank row above the header
++
++    // date chip above the first message of each day (and above the oldest loaded message)
++    {
++      auto dayKey = [](int64_t p_Ms)
++      {
++        const time_t tt = (time_t)(p_Ms / 1000);
++        struct tm tmv;
++        localtime_r(&tt, &tmv);
++        return (tmv.tm_year * 1000) + tmv.tm_yday;
++      };
++
++      bool dayBoundary = true;
++      auto olderIt = std::next(it);
++      if (olderIt != messageVec.end())
++      {
++        auto olderMsg = messages.find(*olderIt);
++        dayBoundary = (olderMsg != messages.end()) && (dayKey(olderMsg->second.timeSent) != dayKey(msg.timeSent));
++      }
++
++      if (dayBoundary && (msg.timeSent != std::numeric_limits<int64_t>::max()))
++      {
++        const time_t tt = (time_t)(msg.timeSent / 1000);
++        struct tm tmv;
++        localtime_r(&tt, &tmv);
++        const time_t nowT = time(nullptr);
++        struct tm nowTm;
++        localtime_r(&nowT, &nowTm);
++        std::string label;
++        if (dayKey(msg.timeSent) == dayKey((int64_t)nowT * 1000)) label = "Today";
++        else if (dayKey(msg.timeSent) == dayKey(((int64_t)nowT - 86400) * 1000)) label = "Yesterday";
++        else
++        {
++          char buf[32] = { 0 };
++          strftime(buf, sizeof(buf), "%a %d %b %Y", &tmv);
++          label = buf;
++        }
++
++        static int metaPairChip = UiColorConfig::GetColorPair("meta_color");
++        const std::wstring chip = L"\u2500\u2500 " + StrUtil::ToWString(label) + L" \u2500\u2500";
++        wattron(m_PaddedWin, metaPairChip);
++        mvwaddnwstr(m_PaddedWin, y, std::max(0, (m_PaddedW - StrUtil::WStringWidth(chip)) / 2), chip.c_str(), (int)chip.size());
++        wattroff(m_PaddedWin, metaPairChip);
++        if (--y < 0) break; // blank row above the chip
++      }
++    }
+ 
+     if (--y < 0) break;
+ 
+@@ -434,6 +652,18 @@ void UiHistoryView::Draw()
    }
  
    wrefresh(m_PaddedWin);
 +  UiImage::Show(placements);
++
++  // thin rule under the chat title
++  if (m_RuleWin != nullptr)
++  {
++    static int rulePair = UiColorConfig::GetColorPair("meta_color");
++    werase(m_RuleWin);
++    wattron(m_RuleWin, rulePair);
++    mvwaddnwstr(m_RuleWin, 0, 0, std::wstring(m_W, L'\u2500').c_str(), m_W);
++    wattroff(m_RuleWin, rulePair);
++    wrefresh(m_RuleWin);
++  }
  }
  
  int UiHistoryView::GetHistoryShowCount()
+diff --git a/src/uihistoryview.h b/src/uihistoryview.h
+index ce5934c..03b2c8b 100644
+--- a/src/uihistoryview.h
++++ b/src/uihistoryview.h
+@@ -25,6 +25,7 @@ private:
+ 
+ private:
+   WINDOW* m_PaddedWin = nullptr;
++  WINDOW* m_RuleWin = nullptr; // thin line under the chat title
+   int m_PaddedH = 0;
+   int m_PaddedW = 0;
+   int m_HistoryShowCount = 0;
 diff --git a/src/uiimage.cpp b/src/uiimage.cpp
 new file mode 100644
 index 0000000..44160b9
@@ -5691,10 +6225,19 @@ index b89cc9b..b33bc97 100644
  
    void UpdateFooter();
 diff --git a/src/uilistview.cpp b/src/uilistview.cpp
-index e3a9160..442b42d 100644
+index e3a9160..5982c1e 100644
 --- a/src/uilistview.cpp
 +++ b/src/uilistview.cpp
-@@ -17,11 +17,12 @@ UiListView::UiListView(const UiViewParams& p_Params)
+@@ -7,6 +7,8 @@
+ 
+ #include "uilistview.h"
+ 
++#include <ctime>
++
+ #include "strutil.h"
+ #include "uicolorconfig.h"
+ #include "uiconfig.h"
+@@ -17,11 +19,12 @@ UiListView::UiListView(const UiViewParams& p_Params)
  {
    if (m_Enabled)
    {
@@ -5709,7 +6252,7 @@ index e3a9160..442b42d 100644
  
      static int colorPair = UiColorConfig::GetColorPair("list_color");
      static int attribute = UiColorConfig::GetAttribute("list_attr");
-@@ -39,6 +40,12 @@ UiListView::~UiListView()
+@@ -39,6 +42,12 @@ UiListView::~UiListView()
      delwin(m_PaddedWin);
      m_PaddedWin = nullptr;
    }
@@ -5722,7 +6265,7 @@ index e3a9160..442b42d 100644
  }
  
  void UiListView::Draw()
-@@ -52,15 +59,66 @@ void UiListView::Draw()
+@@ -52,20 +61,91 @@ void UiListView::Draw()
    static int attribute = UiColorConfig::GetAttribute("list_attr");
    static int attributeSelected = UiColorConfig::GetAttribute("list_attr_selected");
    static int colorPairUnread = UiColorConfig::GetColorPair("list_color_unread");
@@ -5782,6 +6325,7 @@ index e3a9160..442b42d 100644
    std::vector<std::string> names;
    std::vector<bool> unreads;
 -  for (auto& chatPair : p_ChatVec)
++  std::vector<std::string> times;
 +  int visIndex = -1; // selected row within the active tab
 +  for (size_t ci = 0; ci < p_ChatVec.size(); ++ci)
    {
@@ -5791,7 +6335,31 @@ index e3a9160..442b42d 100644
      const std::string& name = m_Model->GetContactListNameLocked(chatPair.first, chatPair.second, true /*p_AllowId*/,
                                                                  true /*p_AllowAlias*/);
      bool isUnread = m_Model->GetChatIsUnreadLocked(chatPair.first, chatPair.second);
-@@ -76,6 +134,7 @@ void UiListView::Draw()
+     names.push_back(name);
+     unreads.push_back(isUnread);
++
++    // last activity: HH:MM today, weekday this week, otherwise day and month
++    std::string when;
++    const int64_t lastMs = m_Model->GetLastMessageTimeLocked(chatPair.first, chatPair.second);
++    if (lastMs > 0)
++    {
++      const time_t tt = (time_t)(lastMs / 1000);
++      const time_t nowT = time(nullptr);
++      struct tm tmv, nowTm;
++      localtime_r(&tt, &tmv);
++      localtime_r(&nowT, &nowTm);
++      char buf[16] = { 0 };
++      if ((tmv.tm_year == nowTm.tm_year) && (tmv.tm_yday == nowTm.tm_yday)) strftime(buf, sizeof(buf), "%H:%M", &tmv);
++      else if ((nowT - tt) < (6 * 86400)) strftime(buf, sizeof(buf), "%a", &tmv);
++      else strftime(buf, sizeof(buf), "%d %b", &tmv);
++      when = buf;
++    }
++
++    times.push_back(when);
+   }
+ 
+   werase(m_PaddedWin);
+@@ -76,6 +156,7 @@ void UiListView::Draw()
    {
      int height = m_PaddedH;
      int count = names.size();
@@ -5799,7 +6367,7 @@ index e3a9160..442b42d 100644
      int offset = std::min(std::max(0, index - ((height - 1) / 2)), std::max(0, count - height));
      int last = std::min((height + offset), count);
      for (int i = offset; i < last; ++i)
-@@ -83,11 +142,11 @@ void UiListView::Draw()
+@@ -83,18 +164,28 @@ void UiListView::Draw()
        if (i == index)
        {
          wattroff(m_PaddedWin, attribute);
@@ -5813,8 +6381,44 @@ index e3a9160..442b42d 100644
        if (!emojiEnabled)
        {
          name = StrUtil::Textize(name);
-@@ -114,7 +173,7 @@ void UiListView::Draw()
+       }
  
+-      std::wstring wname = StrUtil::ToWString(name).substr(0, m_PaddedW);
+-      wname = StrUtil::TrimPadWString(wname, m_PaddedW);
++      // right edge: [unread dot] [time]; the name gets whatever is left
++      static const std::string unreadIndicator = " " + UiConfig::GetStr("unread_indicator");
++      static const std::wstring wunread = StrUtil::ToWString(unreadIndicator);
++      static int timePair = UiColorConfig::GetColorPair("meta_color");
++      const std::wstring wtime = StrUtil::ToWString(times[i]);
++      const int timeW = StrUtil::WStringWidth(wtime);
++      const int unreadW = unreads[i] ? StrUtil::WStringWidth(wunread) : 0;
++      const int rightReserved = (timeW > 0 ? timeW + 1 : 0) + unreadW;
++      const int nameW = std::max(4, m_PaddedW - rightReserved);
++
++      std::wstring wname = StrUtil::ToWString(name).substr(0, nameW);
++      wname = StrUtil::TrimPadWString(wname, m_PaddedW); // pads the whole row so the selection bar spans it
+ 
+       if (unreads[i])
+       {
+@@ -105,16 +196,20 @@ void UiListView::Draw()
+ 
+       if (unreads[i])
+       {
+-        static const std::string unreadIndicator = " " + UiConfig::GetStr("unread_indicator");
+-        static const std::wstring wunread = StrUtil::ToWString(unreadIndicator);
+-        mvwaddnwstr(m_PaddedWin, y, (m_PaddedW - StrUtil::WStringWidth(wunread)), wunread.c_str(), wunread.size());
+-
++        mvwaddnwstr(m_PaddedWin, y, m_PaddedW - timeW - (timeW > 0 ? 1 : 0) - unreadW, wunread.c_str(), wunread.size());
+         wattron(m_PaddedWin, colorPair);
+       }
+ 
++      if (timeW > 0)
++      {
++        if (i != index) wattron(m_PaddedWin, timePair); // selected row keeps the selection colors
++        mvwaddnwstr(m_PaddedWin, y, m_PaddedW - timeW, wtime.c_str(), wtime.size());
++        if (i != index) wattroff(m_PaddedWin, timePair);
++      }
++
        if (i == index)
        {
 -        wattroff(m_PaddedWin, attributeSelected);
@@ -5856,7 +6460,7 @@ index f5af738..2087136 100644
      m_Result = false;
      m_Running = false;
 diff --git a/src/uimodel.cpp b/src/uimodel.cpp
-index d40b779..f1a3d0a 100644
+index d40b779..68fc366 100644
 --- a/src/uimodel.cpp
 +++ b/src/uimodel.cpp
 @@ -8,6 +8,7 @@
@@ -5867,18 +6471,19 @@ index d40b779..f1a3d0a 100644
  
  #include <ncurses.h>
  #include <sys/ioctl.h>
-@@ -16,7 +17,10 @@
+@@ -16,7 +17,11 @@
  #include "appconfig.h"
  #include "messagecache.h"
  #include "apputil.h"
 +#include <fstream>
 +
  #include "clipboard.h"
++#include "uiaudio.h"
 +#include "uploadprogress.h"
  #include "composescript.h"
  #include "fileutil.h"
  #include "log.h"
-@@ -171,17 +175,37 @@ void UiModel::Impl::OnKeySendMsg()
+@@ -171,17 +176,47 @@ void UiModel::Impl::OnKeySendMsg()
    if (editMessageActive)
    {
      SaveEditMessage();
@@ -5901,7 +6506,17 @@ index d40b779..f1a3d0a 100644
 +      auto it = messages.find(messageVec.at(messageOffset));
 +      if ((it != messages.end()) && !it->second.fileInfo.empty())
 +      {
-+        OnKeyOpenAttachment();
++        std::string audioPath;
++        if (GetSelectedAudioPath(audioPath))
++        {
++          UiAudio::Toggle(audioPath); // audio plays inline in the bubble
++          UpdateHistory();
++        }
++        else
++        {
++          OnKeyOpenAttachment();
++        }
++
 +        return;
 +      }
 +    }
@@ -5918,7 +6533,7 @@ index d40b779..f1a3d0a 100644
    std::wstring& entryStr = m_EntryStr[profileId][chatId];
    int& entryPos = m_EntryPos[profileId][chatId];
  
-@@ -193,10 +217,11 @@ void UiModel::Impl::SendMessage()
+@@ -193,10 +228,11 @@ void UiModel::Impl::SendMessage()
    sendMessageRequest->chatMessage.mentions = ParseMentions(profileId, chatId,
                                                             sendMessageRequest->chatMessage.text);
  
@@ -5931,7 +6546,7 @@ index d40b779..f1a3d0a 100644
    }
  
    SendProtocolRequest(profileId, sendMessageRequest);
-@@ -247,6 +272,49 @@ void UiModel::Impl::EntryKeyHandler(wint_t p_Key)
+@@ -247,6 +283,57 @@ void UiModel::Impl::EntryKeyHandler(wint_t p_Key)
    const int messageCount = m_Messages[profileId][chatId].size();
    int& messageOffset = m_MessageOffset[profileId][chatId];
  
@@ -5939,6 +6554,14 @@ index d40b779..f1a3d0a 100644
 +  if (!GetEditMessageActive())
 +  {
 +    const bool selecting = GetSelectMessageActive();
++    std::string audioPath;
++    if (selecting && !m_FocusList && entryStr.empty() && (p_Key == L' ') && GetSelectedAudioPath(audioPath))
++    {
++      UiAudio::Toggle(audioPath); // play / pause the voice message in place
++      UpdateHistory();
++      return;
++    }
++
 +    if (selecting && !m_FocusList && entryStr.empty() && (p_Key == L'm'))
 +    {
 +      OnKeyReply(); // with a message selected, a bare "m" quotes it (same as Ctrl-M)
@@ -5981,7 +6604,7 @@ index d40b779..f1a3d0a 100644
    if (p_Key == keyUp)
    {
      if (GetSelectMessageActive() && !GetEditMessageActive())
-@@ -545,6 +613,166 @@ void UiModel::Impl::SetTyping(const std::string& p_ProfileId, const std::string&
+@@ -545,6 +632,167 @@ void UiModel::Impl::SetTyping(const std::string& p_ProfileId, const std::string&
    }
  }
  
@@ -5997,10 +6620,11 @@ index d40b779..f1a3d0a 100644
 +  if (p_Protocol.rfind("WhatsApp", 0) == 0) return 0;
 +  if (p_Protocol.rfind("Telegram", 0) == 0) return 1;
 +  if (p_Protocol.rfind("Signal", 0) == 0) return 2;
-+  return 3;
++  if (p_Protocol.rfind("Matrix", 0) == 0) return 3;
++  return 4;
 +}
 +
-+// Tab list = protocols that have chats, ordered WhatsApp, Telegram, Signal, then the rest alphabetically
++// Tab list = protocols that have chats, ordered WhatsApp, Telegram, Signal, Matrix, then the rest alphabetically
 +void UiModel::Impl::RefreshTabs()
 +{
 +  std::set<std::string> protocols;
@@ -6039,15 +6663,15 @@ index d40b779..f1a3d0a 100644
 +  return name;
 +}
 +
-+// WhatsApp = 0 (green), Telegram = 1 (blue), Signal = 2 (cyan), others spread over 3..5
++// WhatsApp = 0 (green), Telegram = 1 (blue), Signal = 2 (cyan), Matrix = 3 (purple), others spread over 4..5
 +int UiModel::Impl::GetTabKind(int p_Tab)
 +{
 +  RefreshTabs();
 +  if ((p_Tab < 0) || (p_Tab >= (int)m_Tabs.size())) return 0;
 +  const std::string& protocol = m_Tabs.at(p_Tab);
 +  const int priority = TabPriority(protocol);
-+  if (priority < 3) return priority;
-+  return 3 + (int)(std::hash<std::string>()(protocol) % 3);
++  if (priority < 4) return priority;
++  return 4 + (int)(std::hash<std::string>()(protocol) % 2);
 +}
 +
 +int UiModel::Impl::GetProfileKind(const std::string& p_ProfileId)
@@ -6148,7 +6772,7 @@ index d40b779..f1a3d0a 100644
  void UiModel::Impl::OnKeyNextChat()
  {
    AnyUserKeyInput();
-@@ -553,12 +781,10 @@ void UiModel::Impl::OnKeyNextChat()
+@@ -553,12 +801,10 @@ void UiModel::Impl::OnKeyNextChat()
  
    if (m_ChatVec.empty()) return;
  
@@ -6164,7 +6788,7 @@ index d40b779..f1a3d0a 100644
    m_CurrentChat = m_ChatVec.at(m_CurrentChatIndex);
    OnCurrentChatChanged();
    SetSelectMessageActive(false);
-@@ -572,12 +798,10 @@ void UiModel::Impl::OnKeyPrevChat()
+@@ -572,12 +818,10 @@ void UiModel::Impl::OnKeyPrevChat()
  
    if (m_ChatVec.empty()) return;
  
@@ -6180,7 +6804,7 @@ index d40b779..f1a3d0a 100644
    m_CurrentChat = m_ChatVec.at(m_CurrentChatIndex);
    OnCurrentChatChanged();
    SetSelectMessageActive(false);
-@@ -598,7 +822,7 @@ void UiModel::Impl::OnKeyUnreadChat()
+@@ -598,7 +842,7 @@ void UiModel::Impl::OnKeyUnreadChat()
    {
      const std::pair<std::string, std::string>& chat = m_ChatVec.at(i);
      const bool isUnread = GetChatIsUnread(chat.first, chat.second);
@@ -6189,7 +6813,7 @@ index d40b779..f1a3d0a 100644
      {
        unreadVec.push_back(i);
        if (m_CurrentChatIndex == (int)i)
-@@ -1348,6 +1572,9 @@ void UiModel::Impl::TransferFile(const std::vector<std::string>& p_FilePaths)
+@@ -1348,6 +1592,9 @@ void UiModel::Impl::TransferFile(const std::vector<std::string>& p_FilePaths)
        FileInfo fileInfo;
        fileInfo.filePath = filePath;
        fileInfo.fileType = FileUtil::GetMimeType(filePath);
@@ -6199,7 +6823,7 @@ index d40b779..f1a3d0a 100644
  
        std::shared_ptr<SendMessageRequest> sendMessageRequest =
          std::make_shared<SendMessageRequest>();
-@@ -1372,13 +1599,14 @@ void UiModel::Impl::TransferFile(const std::vector<std::string>& p_FilePaths)
+@@ -1372,13 +1619,14 @@ void UiModel::Impl::TransferFile(const std::vector<std::string>& p_FilePaths)
          }
        }
  
@@ -6215,7 +6839,7 @@ index d40b779..f1a3d0a 100644
          }
        }
  
-@@ -1860,7 +2088,12 @@ void UiModel::Impl::MessageHandler(std::shared_ptr<ServiceMessage> p_ServiceMess
+@@ -1860,7 +2108,12 @@ void UiModel::Impl::MessageHandler(std::shared_ptr<ServiceMessage> p_ServiceMess
        {
          std::shared_ptr<SendMessageNotify> sendMessageNotify = std::static_pointer_cast<SendMessageNotify>(
            p_ServiceMessage);
@@ -6229,7 +6853,7 @@ index d40b779..f1a3d0a 100644
        }
        break;
  
-@@ -2497,12 +2730,7 @@ void UiModel::Impl::SortChats()
+@@ -2497,12 +2750,7 @@ void UiModel::Impl::SortChats()
  
    if (!m_ChatVec.empty())
    {
@@ -6243,7 +6867,7 @@ index d40b779..f1a3d0a 100644
      {
        for (size_t i = 0; i < m_ChatVec.size(); ++i)
        {
-@@ -2615,6 +2843,8 @@ void UiModel::Impl::UpdateChatInfoIsUnread(const std::string& p_ProfileId, const
+@@ -2615,6 +2863,8 @@ void UiModel::Impl::UpdateChatInfoIsUnread(const std::string& p_ProfileId, const
              m_TriggerTerminalBell = true;
            }
  
@@ -6252,7 +6876,7 @@ index d40b779..f1a3d0a 100644
            bool desktopNotify = false;
            if (m_TerminalActive)
            {
-@@ -3258,15 +3488,11 @@ bool UiModel::Impl::IsCurrentChatSet()
+@@ -3258,15 +3508,11 @@ bool UiModel::Impl::IsCurrentChatSet()
    return (m_CurrentChatIndex >= 0);
  }
  
@@ -6271,7 +6895,7 @@ index d40b779..f1a3d0a 100644
  }
  
  void UiModel::Impl::SetTerminalActive(bool p_TerminalActive)
-@@ -3293,6 +3519,36 @@ void UiModel::Impl::SetTerminalActive(bool p_TerminalActive)
+@@ -3293,6 +3539,36 @@ void UiModel::Impl::SetTerminalActive(bool p_TerminalActive)
    }
  }
  
@@ -6308,7 +6932,7 @@ index d40b779..f1a3d0a 100644
  void UiModel::Impl::DesktopNotify(const std::string& p_Name, const std::string& p_Text)
  {
    static const bool desktopNotifyEnabled = UiConfig::GetBool("desktop_notify_enabled");
-@@ -3723,6 +3979,114 @@ void UiModel::Impl::SaveEditMessage()
+@@ -3723,6 +3999,138 @@ void UiModel::Impl::SaveEditMessage()
    Clear(false /*p_AllowUndo*/);
  }
  
@@ -6321,6 +6945,28 @@ index d40b779..f1a3d0a 100644
 +{
 +  m_ReplyMsgId.clear();
 +  m_ReplyChat = std::pair<std::string, std::string>();
++}
++
++// downloaded audio attachment of the selected message (for the inline player), "" if none
++bool UiModel::Impl::GetSelectedAudioPath(std::string& p_Path)
++{
++  if (!GetSelectMessageActive() || GetEditMessageActive()) return false;
++
++  const std::string& profileId = m_CurrentChat.first;
++  const std::string& chatId = m_CurrentChat.second;
++  const std::vector<std::string>& messageVec = m_MessageVec[profileId][chatId];
++  const int messageOffset = m_MessageOffset[profileId][chatId];
++  if (messageOffset >= (int)messageVec.size()) return false;
++
++  const auto& messages = m_Messages[profileId][chatId];
++  auto it = messages.find(messageVec.at(messageOffset));
++  if ((it == messages.end()) || it->second.fileInfo.empty()) return false;
++
++  const FileInfo fileInfo = ProtocolUtil::FileInfoFromHex(it->second.fileInfo);
++  if ((fileInfo.fileStatus != FileStatusDownloaded) || !UiAudio::IsAudioPath(fileInfo.filePath)) return false;
++
++  p_Path = fileInfo.filePath;
++  return true;
 +}
 +
 +// message the next sent text will reply to: the selected one, or the one fixed with the reply key
@@ -6357,7 +7003,9 @@ index d40b779..f1a3d0a 100644
 +  p_Text = msg.text.empty() ? std::string() : StrUtil::Split(msg.text, '\n').at(0);
 +  if (p_Text.empty() && !msg.fileInfo.empty())
 +  {
-+    p_Text = FileUtil::BaseName(ProtocolUtil::FileInfoFromHex(msg.fileInfo).filePath);
++    const FileInfo fileInfo = ProtocolUtil::FileInfoFromHex(msg.fileInfo);
++    p_Text = FileUtil::BaseName(fileInfo.filePath);
++    if (UiAudio::IsAudioPath(fileInfo.filePath)) p_Text = "\u266a " + p_Text + "  [Space]";
 +  }
 +
 +  return true;
@@ -6423,7 +7071,7 @@ index d40b779..f1a3d0a 100644
  void UiModel::Impl::OnKeyCancel()
  {
    AnyUserKeyInput();
-@@ -3733,6 +4097,8 @@ void UiModel::Impl::OnKeyCancel()
+@@ -3733,6 +4141,8 @@ void UiModel::Impl::OnKeyCancel()
      SetEditMessageActive(false);
    }
  
@@ -6432,7 +7080,7 @@ index d40b779..f1a3d0a 100644
    Clear(allowUndo);
  }
  
-@@ -4385,14 +4751,24 @@ void UiModel::Impl::AddQuoteFromSelectedMessage(ChatMessage& p_ChatMessage)
+@@ -4385,14 +4795,24 @@ void UiModel::Impl::AddQuoteFromSelectedMessage(ChatMessage& p_ChatMessage)
    const int messageOffset = m_MessageOffset[profileId][chatId];
    const std::unordered_map<std::string, ChatMessage>& messages = m_Messages[profileId][chatId];
  
@@ -6462,7 +7110,7 @@ index d40b779..f1a3d0a 100644
    if (msg == messages.end())
    {
      LOG_WARNING("error finding selected message content");
-@@ -4571,6 +4947,16 @@ void UiModel::KeyHandler(wint_t p_Key)
+@@ -4571,6 +4991,16 @@ void UiModel::KeyHandler(wint_t p_Key)
    static wint_t keyHome = UiKeyConfig::GetKey("home");
  
    static wint_t keySendMsg = UiKeyConfig::GetKey("send_msg");
@@ -6479,7 +7127,7 @@ index d40b779..f1a3d0a 100644
    static wint_t keyNextChat = UiKeyConfig::GetKey("next_chat");
    static wint_t keyPrevChat = UiKeyConfig::GetKey("prev_chat");
    static wint_t keyUnreadChat = UiKeyConfig::GetKey("unread_chat");
-@@ -4660,6 +5046,26 @@ void UiModel::KeyHandler(wint_t p_Key)
+@@ -4660,6 +5090,26 @@ void UiModel::KeyHandler(wint_t p_Key)
      std::unique_lock<owned_mutex> lock(m_ModelMutex);
      GetImpl().OnKeyToggleEmoji();
    }
@@ -6506,7 +7154,7 @@ index d40b779..f1a3d0a 100644
    else if (p_Key == keyNextChat)
    {
      std::unique_lock<owned_mutex> lock(m_ModelMutex);
-@@ -4796,8 +5202,15 @@ void UiModel::KeyHandler(wint_t p_Key)
+@@ -4796,8 +5246,15 @@ void UiModel::KeyHandler(wint_t p_Key)
    }
    else if (p_Key == keyCancel)
    {
@@ -6524,7 +7172,7 @@ index d40b779..f1a3d0a 100644
    }
    else if (p_Key == keyDecreaseListWidth)
    {
-@@ -5055,6 +5468,60 @@ std::string UiModel::GetContactPhoneLocked(const std::string& p_ProfileId, const
+@@ -5055,6 +5512,60 @@ std::string UiModel::GetContactPhoneLocked(const std::string& p_ProfileId, const
    return GetImpl().GetContactPhone(p_ProfileId, p_ChatId);
  }
  
@@ -6585,7 +7233,7 @@ index d40b779..f1a3d0a 100644
  int UiModel::GetCurrentChatIndexLocked()
  {
    nc_assert(m_ModelMutex.owns_lock());
-@@ -5265,7 +5732,9 @@ std::vector<std::string> UiModel::SelectFile()
+@@ -5265,7 +5776,9 @@ std::vector<std::string> UiModel::SelectFile()
      static const bool filePickerPersistDir = UiConfig::GetBool("file_picker_persist_dir");
      if (!filePickerPersistDir || currentDir.empty())
      {
@@ -6596,7 +7244,7 @@ index d40b779..f1a3d0a 100644
      }
  
      UiDialogParams params(this, "Send File", 0.75, 0.65);
-@@ -5284,9 +5753,18 @@ std::vector<std::string> UiModel::SelectFile()
+@@ -5284,9 +5797,18 @@ std::vector<std::string> UiModel::SelectFile()
  void UiModel::OnKeyTransfer()
  {
    // Pre-req
@@ -6615,7 +7263,7 @@ index d40b779..f1a3d0a 100644
    }
  
    // Open modal dialog without model mutex held
-@@ -5760,7 +6238,29 @@ void UiModel::OnKeyCopy()
+@@ -5760,7 +6282,29 @@ void UiModel::OnKeyCopy()
  
  void UiModel::OnKeyPaste()
  {
@@ -6646,7 +7294,7 @@ index d40b779..f1a3d0a 100644
    {
      // Open modal dialog without model mutex held
      static const bool confirmSendPastedImage = UiConfig::GetBool("confirm_send_pasted_image");
-@@ -5774,8 +6274,9 @@ void UiModel::OnKeyPaste()
+@@ -5774,8 +6318,9 @@ void UiModel::OnKeyPaste()
  
      static int index = 0;
      ++index;
@@ -6659,7 +7307,7 @@ index d40b779..f1a3d0a 100644
        MessageDialog("Warning", "Failed getting clipboard image.", 0.7, 5);
        return;
 diff --git a/src/uimodel.h b/src/uimodel.h
-index 4782732..97d3d4a 100644
+index 4782732..fcc6e97 100644
 --- a/src/uimodel.h
 +++ b/src/uimodel.h
 @@ -7,6 +7,7 @@
@@ -6692,11 +7340,12 @@ index 4782732..97d3d4a 100644
      void OnKeyNextChat();
      void OnKeyPrevChat();
      void OnKeyUnreadChat();
-@@ -171,7 +187,13 @@ private:
+@@ -171,7 +187,14 @@ private:
      void Cut();
      void Copy();
      void Paste();
 +    void OnKeyReply();
++    bool GetSelectedAudioPath(std::string& p_Path);
 +    void OnKeyBack();
 +    bool HasReplyTarget();
 +    void ClearReplyTarget();
@@ -6706,7 +7355,7 @@ index 4782732..97d3d4a 100644
      bool PreEditMsg(std::string& p_ProfileId, std::string& p_ChatId, std::string& p_MsgId,
                      std::string& p_MsgDialogText);
      void StartEditMsg(const std::string& p_ProfileId, const std::string& p_ChatId, const std::string& p_MsgId);
-@@ -216,6 +238,7 @@ private:
+@@ -216,6 +239,7 @@ private:
      void ResetMessageOffset();
      bool IsCurrentChatSet();
      bool SetCurrentChatIndexIfNotSet();
@@ -6714,7 +7363,7 @@ index 4782732..97d3d4a 100644
      void DesktopNotify(const std::string& p_Name, const std::string& p_Text);
      void SetHistoryInteraction(bool p_HistoryInteraction);
      std::string GetSelectedMessageText();
-@@ -252,6 +275,12 @@ private:
+@@ -252,6 +276,12 @@ private:
  
      std::pair<std::string, std::string> m_CurrentChat;
      int m_CurrentChatIndex = -1;
@@ -6727,7 +7376,7 @@ index 4782732..97d3d4a 100644
      static const std::pair<std::string, std::string> s_ChatNone;
  
      std::string m_EditMessageId;
-@@ -351,6 +380,15 @@ public:
+@@ -351,6 +381,15 @@ public:
    std::string GetContactNameLocked(const std::string& p_ProfileId, const std::string& p_ChatId);
    std::string GetContactPhoneLocked(const std::string& p_ProfileId, const std::string& p_ChatId);
    int GetCurrentChatIndexLocked();
@@ -6860,31 +7509,38 @@ index bc84e02..e1fa707 100644
      m_Result = false;
      m_Running = false;
 diff --git a/src/uitopview.cpp b/src/uitopview.cpp
-index c91542a..d1c9ad0 100644
+index c91542a..786d02b 100644
 --- a/src/uitopview.cpp
 +++ b/src/uitopview.cpp
-@@ -7,6 +7,8 @@
+@@ -7,6 +7,11 @@
  
  #include "uitopview.h"
  
++#include <algorithm>
++#include <vector>
++
 +#include <algorithm>
 +
  #include "appconfig.h"
  #include "apputil.h"
  #include "status.h"
-@@ -31,6 +33,21 @@ void UiTopView::Draw()
+@@ -31,6 +36,25 @@ void UiTopView::Draw()
    m_Dirty |= (status != lastStatus);
    lastStatus = status;
  
 +  // chat title (messaging-app style header)
 +  std::string titleStr;
++  std::string nameStr;
++  std::string chatStatusStr;
++  int kind = 0;
 +  {
 +    const std::pair<std::string, std::string>& chat = m_Model->GetCurrentChatLocked();
 +    if (!chat.first.empty())
 +    {
-+      titleStr = m_Model->GetContactListNameLocked(chat.first, chat.second, true, true);
-+      const std::string chatStatus = m_Model->GetChatStatusLocked(chat.first, chat.second);
-+      if (!chatStatus.empty()) titleStr += "  \u00b7  " + chatStatus;
++      nameStr = m_Model->GetContactListNameLocked(chat.first, chat.second, true, true);
++      chatStatusStr = m_Model->GetChatStatusLocked(chat.first, chat.second);
++      kind = std::min(std::max(m_Model->GetProfileKindLocked(chat.first), 0), 5);
++      titleStr = nameStr + "\x1f" + chatStatusStr + "\x1f" + std::to_string(kind);
 +    }
 +  }
 +  static std::string lastTitleStr;
@@ -6894,33 +7550,90 @@ index c91542a..d1c9ad0 100644
    if (!m_Dirty) return;
    m_Dirty = false;
  
-@@ -64,14 +81,18 @@ void UiTopView::Draw()
+@@ -40,14 +64,11 @@ void UiTopView::Draw()
+ 
+   curs_set(0);
+ 
+-  int topPadLeft = 1;
+-  int topPadRight = 1;
+   static int colorPair = UiColorConfig::GetColorPair("top_color");
+   static int attribute = UiColorConfig::GetAttribute("top_attr");
+ 
+   werase(m_Win);
+   wbkgd(m_Win, attribute | colorPair | ' ');
+-  wattron(m_Win, attribute | colorPair);
+ 
+   // simple proxy config check
+   static const std::string statusSuffixStr = []()
+@@ -64,17 +85,45 @@ void UiTopView::Draw()
      return std::string("");
    }();
  
 -  static const bool topShowVersion = UiConfig::GetBool("top_show_version");
 -  static const std::string appNameVersion = AppUtil::GetAppName(topShowVersion);
++  // chat name bold in the service color, its status muted; connection status muted on the right
++  static int metaPair = UiColorConfig::GetColorPair("meta_color");
++  static std::vector<int> accentPairs = []()
++  {
++    std::vector<int> pairs;
++    for (int k = 0; k < 6; ++k) pairs.push_back(UiColorConfig::GetColorPair("history_name_sent_k" + std::to_string(k) + "_color"));
++    return pairs;
++  }();
++
    const std::string statusStr = Status::ToString(status) + statusSuffixStr;
 -  std::wstring topWStrLeft = StrUtil::ToWString(std::string(topPadLeft, ' ') + appNameVersion);
-+  std::wstring topWStrLeft = StrUtil::ToWString(std::string(topPadLeft, ' ') + titleStr);
-   std::wstring topWStrRight = StrUtil::ToWString(statusStr + std::string(topPadRight, ' '));
-   int topStrLeftWidth = StrUtil::WStringWidth(topWStrLeft);
-   int topStrRightWidth = StrUtil::WStringWidth(topWStrRight);
- 
-+  if (topStrLeftWidth + topStrRightWidth > m_W)
-+  {
-+    topWStrLeft = topWStrLeft.substr(0, std::max(0, m_W - topStrRightWidth));
-+    topStrLeftWidth = StrUtil::WStringWidth(topWStrLeft);
-+  }
+-  std::wstring topWStrRight = StrUtil::ToWString(statusStr + std::string(topPadRight, ' '));
+-  int topStrLeftWidth = StrUtil::WStringWidth(topWStrLeft);
+-  int topStrRightWidth = StrUtil::WStringWidth(topWStrRight);
++  const std::wstring wRight = StrUtil::ToWString(statusStr);
++  const int rightW = StrUtil::WStringWidth(wRight);
++  const int leftPad = 2;
++  const int maxLeft = std::max(0, m_W - rightW - leftPad - 2);
 +
-   std::wstring topWStr = topWStrLeft + std::wstring(m_W - topStrLeftWidth - topStrRightWidth, ' ') + topWStrRight;
-   mvwaddnwstr(m_Win, 0, 0, topWStr.c_str(), topWStr.size());
++  std::wstring wName = StrUtil::ToWString(nameStr);
++  if (StrUtil::WStringWidth(wName) > maxLeft) wName = wName.substr(0, maxLeft);
++  wattron(m_Win, A_BOLD | accentPairs.at(kind));
++  mvwaddnwstr(m_Win, 0, leftPad, wName.c_str(), wName.size());
++  wattroff(m_Win, A_BOLD | accentPairs.at(kind));
++
++  if (!chatStatusStr.empty())
++  {
++    const int used = StrUtil::WStringWidth(wName);
++    std::wstring wStatus = L"  \u00b7  " + StrUtil::ToWString(chatStatusStr);
++    if (used + StrUtil::WStringWidth(wStatus) <= maxLeft)
++    {
++      wattron(m_Win, metaPair);
++      mvwaddnwstr(m_Win, 0, leftPad + used, wStatus.c_str(), wStatus.size());
++      wattroff(m_Win, metaPair);
++    }
++  }
  
+-  std::wstring topWStr = topWStrLeft + std::wstring(m_W - topStrLeftWidth - topStrRightWidth, ' ') + topWStrRight;
+-  mvwaddnwstr(m_Win, 0, 0, topWStr.c_str(), topWStr.size());
++  if (rightW > 0)
++  {
++    wattron(m_Win, metaPair);
++    mvwaddnwstr(m_Win, 0, std::max(0, m_W - rightW - 2), wRight.c_str(), wRight.size());
++    wattroff(m_Win, metaPair);
++  }
+ 
+-  wattroff(m_Win, attribute | colorPair);
+   wrefresh(m_Win);
+ }
 diff --git a/src/uiview.cpp b/src/uiview.cpp
-index 786c010..1d3e47c 100644
+index 786c010..1a5863a 100644
 --- a/src/uiview.cpp
 +++ b/src/uiview.cpp
-@@ -45,69 +45,56 @@ void UiView::Init()
+@@ -17,6 +17,8 @@
+ #include "uilistview.h"
+ #include "uiscreen.h"
+ #include "uistatusview.h"
++#include "uiaudio.h"
++#include "timeutil.h"
+ #include "uitopview.h"
+ #include "uiviewbase.h"
+ 
+@@ -45,75 +47,72 @@ void UiView::Init()
  {
    m_UiScreen = std::make_shared<UiScreen>();
  
@@ -6991,7 +7704,7 @@ index 786c010..1d3e47c 100644
 -    m_UiListView = std::make_shared<UiListView>(params);
 +    int h = m_EntryHeight;
 +    int y = screenH - m_UiHelpView->H() - h;
-+    UiViewParams params(rightX + 2, y, rightW - 2, h, m_EntryEnabled, m_UiModel); // gap from the contact column
++    UiViewParams params(rightX + 4, y, rightW - 4, h, m_EntryEnabled, m_UiModel); // gap + prompt glyph at rightX+2
 +    m_UiEntryView = std::make_shared<UiEntryView>(params);
    }
  
@@ -7021,3 +7734,19 @@ index 786c010..1d3e47c 100644
      m_UiHistoryView = std::make_shared<UiHistoryView>(params);
    }
  }
+ 
+ void UiView::Draw()
+ {
++  // inline audio player: refresh the bubble while a track plays (about 5 times a second), and when it ends
++  static int64_t lastAudioRedrawMs = 0;
++  const bool audioEnded = UiAudio::Poll();
++  const int64_t nowMs = TimeUtil::GetCurrentTimeMSec();
++  if (audioEnded || (UiAudio::IsPlaying() && ((nowMs - lastAudioRedrawMs) > 200)))
++  {
++    lastAudioRedrawMs = nowMs;
++    m_UiHistoryView->SetDirty(true);
++  }
++
+   m_UiTopView->Draw();
+   m_UiHelpView->Draw();
+   m_UiStatusView->Draw();

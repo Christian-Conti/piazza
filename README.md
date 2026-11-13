@@ -7,10 +7,11 @@ All your chats in one terminal, one tab per service. A patched [nchat](https://g
   with unread counts. Adding another account adds another tab, no code change.
 - **Messaging-app layout**: full-height contact column, chat title, rounded colored bubbles (sent on the right).
 - **Inline images, stickers, GIFs** via the kitty graphics protocol; `Enter` enlarges, short videos/GIFs loop in the terminal.
-- **Voice messages / audio**: `Enter` on a selected audio message plays it in the terminal with a progress bar (`space` pause, `q` stop).
+- **Voice messages / audio** play inside the bubble (`▶ ━━●──── 0:12/0:31`): select the message, `Space` or `Enter` plays/pauses. `Alt-O` opens the full-screen player.
 - **Replies**: `m` / `Ctrl+M` on a selected message quotes it, quotes show as an inset card.
 - **Paste images** (`Ctrl+V`), **attach files** (`Ctrl+T`, with an upload spinner / progress bar), emoji picker with *recent* and categories, sound on new messages.
-- Colors come from your terminal theme (ANSI colors only).
+- Rounded dialogs and bubbles, date separators, last-activity times in the contact list, prompt with hint, muted metadata.
+- Colors come from your terminal theme (ANSI colors only). WhatsApp green, Telegram blue, Signal cyan, Matrix purple.
 
 ## Install
 
@@ -34,6 +35,8 @@ Config stays in `~/.config/nchat`. Existing `key.conf` / `color.conf` keep old v
 | `scripts/preview.sh` | full-screen preview for images, webp, short videos/GIFs |
 | `scripts/piazza` | launcher |
 | `config/kitty.conf.snippet` | Shift+Enter / Ctrl+M mappings |
+
+**Matrix:** the tab and its purple color are ready, but nchat has no Matrix protocol plugin yet, so a Matrix tab only appears once a `Matrix` profile exists.
 
 See [docs/KEYS.md](docs/KEYS.md) for keys. nchat is MIT licensed (see `nchat/LICENSE`).
 
