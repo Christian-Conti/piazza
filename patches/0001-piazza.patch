@@ -5485,7 +5485,7 @@ index f5af738..2087136 100644
      m_Result = false;
      m_Running = false;
 diff --git a/src/uimodel.cpp b/src/uimodel.cpp
-index d40b779..cca4783 100644
+index d40b779..6cfc14f 100644
 --- a/src/uimodel.cpp
 +++ b/src/uimodel.cpp
 @@ -8,6 +8,7 @@
@@ -6199,11 +6199,35 @@ index d40b779..cca4783 100644
      }
  
      UiDialogParams params(this, "Send File", 0.75, 0.65);
-@@ -5760,7 +6220,24 @@ void UiModel::OnKeyCopy()
+@@ -5284,9 +5744,18 @@ std::vector<std::string> UiModel::SelectFile()
+ void UiModel::OnKeyTransfer()
+ {
+   // Pre-req
++  bool noChatOpen = false;
+   {
+     std::unique_lock<owned_mutex> lock(m_ModelMutex);
+     if (GetImpl().GetEditMessageActive()) return;
++    noChatOpen = GetImpl().GetCurrentChat().first.empty();
++  }
++
++  if (noChatOpen)
++  {
++    // nothing would be sent: there is no recipient until a chat is opened
++    MessageDialog("Warning", "Open a chat first (arrow keys), then attach the file.", 0.7, 5);
++    return;
+   }
+ 
+   // Open modal dialog without model mutex held
+@@ -5760,7 +6229,29 @@ void UiModel::OnKeyCopy()
  
  void UiModel::OnKeyPaste()
  {
 -  if (Clipboard::HasImage())
++  {
++    std::unique_lock<owned_mutex> lock(m_ModelMutex);
++    if (GetImpl().GetCurrentChat().first.empty()) return; // no chat open: nothing to paste into
++  }
++
 +  // On Wayland the X11 clipboard bridge often has no image: ask kitty directly (may show kitty's permission prompt)
 +  std::string kittenImagePath;
 +  if (!Clipboard::HasImage() && (getenv("KITTY_WINDOW_ID") != nullptr))
@@ -6225,7 +6249,7 @@ index d40b779..cca4783 100644
    {
      // Open modal dialog without model mutex held
      static const bool confirmSendPastedImage = UiConfig::GetBool("confirm_send_pasted_image");
-@@ -5774,8 +6251,9 @@ void UiModel::OnKeyPaste()
+@@ -5774,8 +6265,9 @@ void UiModel::OnKeyPaste()
  
      static int index = 0;
      ++index;
