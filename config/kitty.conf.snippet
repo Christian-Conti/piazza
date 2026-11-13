@@ -1,0 +1,3 @@
+# piazza: terminals cannot tell Shift+Enter / Ctrl+M from Enter, so kitty sends Alt+Enter / Alt+M instead
+map shift+enter send_text all \x1b\r
+map ctrl+m send_text all \x1bm

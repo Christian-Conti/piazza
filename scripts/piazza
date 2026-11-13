@@ -1,0 +1,4 @@
+#!/bin/sh
+# Launcher: runs the patched nchat built by install.sh. Extra arguments go to nchat (e.g. -s to add an account).
+ROOT="$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)"
+exec "$ROOT/nchat/build/bin/nchat" "$@"
