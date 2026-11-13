@@ -5355,7 +5355,7 @@ index 32e8e82..5652628 100644
  
    werase(m_Win);
 diff --git a/src/uihistoryview.cpp b/src/uihistoryview.cpp
-index ef9da40..b52b220 100644
+index ef9da40..23a2e4a 100644
 --- a/src/uihistoryview.cpp
 +++ b/src/uihistoryview.cpp
 @@ -7,6 +7,11 @@
@@ -5495,7 +5495,7 @@ index ef9da40..b52b220 100644
 +  int paddedBegX = 0;
 +  getbegyx(m_PaddedWin, paddedBegY, paddedBegX);
 +  static const int imageRows = 9;
-+  const int imageCols = std::max(4, std::min(bubbleW - 4, 36));
++  const int imageCols = std::max(4, std::min(bubbleW - 6, 36));
 +
    bool firstMessage = true;
    int y = m_PaddedH - 1;
@@ -5529,7 +5529,7 @@ index ef9da40..b52b220 100644
        }
  
 -      wlines = StrUtil::WordWrap(StrUtil::ToWString(text), m_PaddedW, false, false, false, 2);
-+      wlines = StrUtil::WordWrap(StrUtil::ToWString(text), bubbleW - 2, false, false, false, 2);
++      wlines = StrUtil::WordWrap(StrUtil::ToWString(text), bubbleW - 4, false, false, false, 2);
      }
  
      // Quoted message
@@ -5553,7 +5553,7 @@ index ef9da40..b52b220 100644
 -      std::wstring quote = quoteIndicator + StrUtil::ToWString(quotedText);
 -      if (StrUtil::WStringWidth(quote) > maxQuoteLen)
 +      // reply preview becomes a dark inset card inside the bubble: [author] over [quoted text]
-+      const int maxQuoteLen = bubbleW - 8;
++      const int maxQuoteLen = bubbleW - 10;
 +      auto fitQuote = [&](const std::string& p_Str)
        {
 -        quote = StrUtil::TrimPadWString(quote, maxQuoteLen) + L"...";
@@ -5614,7 +5614,7 @@ index ef9da40..b52b220 100644
 +        auto fmt = [](int sec) { return std::to_string(sec / 60) + ":" + (sec % 60 < 10 ? "0" : "") + std::to_string(sec % 60); };
 +        const std::wstring times = StrUtil::ToWString(fmt(elapsed) + (total > 0 ? "/" + fmt(total) : ""));
 +        const std::wstring icon = (audio.current && !audio.paused) ? L"\u23f8 " : L"\u25b6 ";
-+        const int barW = std::max(6, bubbleW - 2 - StrUtil::WStringWidth(attachmentIndicator + icon + times) - 2);
++        const int barW = std::max(6, bubbleW - 4 - StrUtil::WStringWidth(attachmentIndicator + icon + times) - 2);
 +        const int pos = (total > 0) ? std::min(barW - 1, (elapsed * (barW - 1)) / total) : 0;
 +        std::wstring bar;
 +        for (int i = 0; i < barW; ++i) bar += (i < pos) ? L'\u2501' : (i == pos) ? L'\u25cf' : L'\u2500';
@@ -5661,15 +5661,16 @@ index ef9da40..b52b220 100644
      if (firstMessage && ((int)wlines.size() > maxMessageLines))
      {
        wlines.resize(maxMessageLines - 1);
-@@ -314,8 +428,38 @@ void UiHistoryView::Draw()
+@@ -314,39 +428,83 @@ void UiHistoryView::Draw()
        reactionLines = 0;
      }
  
 +    const int bx = msg.isOutgoing ? (m_PaddedW - bubbleW - rightMargin) : 0;
 +    auto drawEdge = [&](int p_Y, bool p_Top)
 +    {
-+      // rounded look: half blocks with cut corners, drawn in the bubble color over the pane background
-+      const std::wstring edge = L" " + std::wstring(bubbleW - 2, p_Top ? L'\u2584' : L'\u2580') + L" ";
++      // rounded look: half-height edge with quadrant blocks as corners, drawn in the bubble color over the pane
++      const std::wstring edge = std::wstring(1, p_Top ? L'\u2597' : L'\u259d') +
++        std::wstring(bubbleW - 2, p_Top ? L'\u2584' : L'\u2580') + std::wstring(1, p_Top ? L'\u2596' : L'\u2598');
 +      const int pair = isSelectedMessage ? colorPairEdgeSelected : (msg.isOutgoing ? kind.edgeSent : kind.edgeRecv);
 +      wattron(m_PaddedWin, pair);
 +      mvwaddnwstr(m_PaddedWin, p_Y, bx, edge.c_str(), edge.size());
@@ -5690,7 +5691,7 @@ index ef9da40..b52b220 100644
 +        // top row of the image block: remember where to draw the picture once the window is flushed
 +        UiImage::Placement placement;
 +        placement.path = imgPath;
-+        placement.x = paddedBegX + bx + 2;
++        placement.x = paddedBegX + bx + 3;
 +        placement.y = paddedBegY + y;
 +        placement.cols = imageCols;
 +        placement.rows = imgRows;
@@ -5699,8 +5700,10 @@ index ef9da40..b52b220 100644
 +
        bool isAttachment = (wline->rfind(attachmentIndicator, 0) == 0);
        bool isQuote = (wline->rfind(quoteIndicator, 0) == 0);
-       bool isReaction = (reactionLines == 1) && (std::distance(wline, wlines.rbegin()) == 0);
-@@ -324,29 +468,33 @@ void UiHistoryView::Draw()
+-      bool isReaction = (reactionLines == 1) && (std::distance(wline, wlines.rbegin()) == 0);
++      bool isReaction = false; // reaction row shares the bubble color, so the bubble stays solid
+ 
+       if (isAttachment)
        {
          wattron(m_PaddedWin, attributeText | colorPairTextAttachment);
        }
@@ -5722,7 +5725,7 @@ index ef9da40..b52b220 100644
 -      mvwaddnwstr(m_PaddedWin, y, 0, wdisp.c_str(), std::min((int)wdisp.size(), m_PaddedW));
 +      // one column of inner padding on the left; right padding comes from the trim-pad
 +      const std::wstring wdisp = isQuote ? StrUtil::TrimPadWString(L"", bubbleW)
-+                                         : isReaction ? (L" " + *wline) : StrUtil::TrimPadWString(L" " + *wline, bubbleW);
++                                         : isReaction ? (L" " + *wline) : StrUtil::TrimPadWString(L"  " + *wline, bubbleW);
 +      mvwaddnwstr(m_PaddedWin, y, bx, wdisp.c_str(), std::min((int)wdisp.size(), bubbleW));
  
 -      if (isAttachment)
@@ -5730,11 +5733,20 @@ index ef9da40..b52b220 100644
        {
 -        wattroff(m_PaddedWin, attributeText | colorPairTextAttachment);
 +        const bool isQuoteAuthor = ((lineIdx + 1) < (int)wlines.size()) && (wlines[lineIdx + 1].rfind(quoteIndicator, 0) == 0);
-+        const std::wstring inset = StrUtil::TrimPadWString(L"\u258e " + wline->substr(quoteIndicator.size()), bubbleW - 2);
++        const std::wstring inset = StrUtil::TrimPadWString(L"\u258e " + wline->substr(quoteIndicator.size()), bubbleW - 4);
 +        const int quoteAttr = isQuoteAuthor ? A_BOLD : 0;
 +        wattron(m_PaddedWin, quoteAttr | (msg.isOutgoing ? kind.quoteSent : kind.quoteRecv));
-+        mvwaddnwstr(m_PaddedWin, y, bx + 1, inset.c_str(), std::min((int)inset.size(), bubbleW - 2));
++        mvwaddnwstr(m_PaddedWin, y, bx + 2, inset.c_str(), std::min((int)inset.size(), bubbleW - 4));
 +        wattroff(m_PaddedWin, quoteAttr | (msg.isOutgoing ? kind.quoteSent : kind.quoteRecv));
++      }
++
++      // soft sides: the outer cells become half blocks (right half on the left edge, left half on the right edge)
++      {
++        const int sidePair = isSelectedMessage ? colorPairEdgeSelected : (msg.isOutgoing ? kind.edgeSent : kind.edgeRecv);
++        wattron(m_PaddedWin, sidePair);
++        mvwaddnwstr(m_PaddedWin, y, bx, L"\u2590", 1);
++        mvwaddnwstr(m_PaddedWin, y, bx + bubbleW - 1, L"\u258c", 1);
++        wattroff(m_PaddedWin, sidePair);
        }
 -      else if (isQuote)
 +
@@ -5745,7 +5757,7 @@ index ef9da40..b52b220 100644
        }
        else if (isReaction)
        {
-@@ -362,6 +510,9 @@ void UiHistoryView::Draw()
+@@ -362,6 +520,9 @@ void UiHistoryView::Draw()
  
      if (y < 0) break;
  
@@ -5755,7 +5767,7 @@ index ef9da40..b52b220 100644
      int attributeName = isSelectedMessage ? attributeNameSelected : attributeNameNormal;
      int colorPairName = [&]()
      {
-@@ -398,7 +549,12 @@ void UiHistoryView::Draw()
+@@ -398,7 +559,12 @@ void UiHistoryView::Draw()
      {
        if (msg.timeSent != std::numeric_limits<int64_t>::max())
        {
@@ -5769,7 +5781,7 @@ index ef9da40..b52b220 100644
        }
      }
  
-@@ -419,14 +575,76 @@ void UiHistoryView::Draw()
+@@ -419,14 +585,76 @@ void UiHistoryView::Draw()
          L" user " + StrUtil::ToWString(msg.senderId);
      }
  
@@ -5849,7 +5861,7 @@ index ef9da40..b52b220 100644
  
      if (--y < 0) break;
  
-@@ -434,6 +652,18 @@ void UiHistoryView::Draw()
+@@ -434,6 +662,18 @@ void UiHistoryView::Draw()
    }
  
    wrefresh(m_PaddedWin);
