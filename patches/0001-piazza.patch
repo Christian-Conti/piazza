@@ -5466,7 +5466,7 @@ index 32e8e82..5652628 100644
  
    werase(m_Win);
 diff --git a/src/uihistoryview.cpp b/src/uihistoryview.cpp
-index ef9da40..08a7dd1 100644
+index ef9da404..ff83d84c 100644
 --- a/src/uihistoryview.cpp
 +++ b/src/uihistoryview.cpp
 @@ -7,6 +7,13 @@
@@ -5712,20 +5712,22 @@ index ef9da40..08a7dd1 100644
      if (!msg.fileInfo.empty())
      {
        FileInfo fileInfo = ProtocolUtil::FileInfoFromHex(msg.fileInfo);
-@@ -181,10 +269,24 @@ void UiHistoryView::Draw()
+@@ -181,10 +269,26 @@ void UiHistoryView::Draw()
          (AppConfig::GetNum("attachment_prefetch") == AttachmentPrefetchAll);
        static const bool isAttachmentPrefetchSelected =
          (AppConfig::GetNum("attachment_prefetch") == AttachmentPrefetchSelected);
 -      if (isAttachmentPrefetchAll || (isSelectedMessage && isAttachmentPrefetchSelected))
 +      // inline media (pictures, and videos when ffmpeg can make a thumbnail) is fetched for display only
 +      // Telegram names not-yet-downloaded files "[Photo]", "[Sticker]", "[Animation]"; WhatsApp gives a real extension.
-+      // GIFs are mp4 animations and need ffmpeg for the thumbnail; plain videos are only fetched on selection.
++      // GIFs are mp4 animations and need ffmpeg for the thumbnail; videos are fetched too (thumbnail + play badge).
 +      const std::string& attachName = fileInfo.filePath;
 +      // voice messages are tiny: fetch them too, so Space/Enter can play them right away
 +      const bool isVoiceNote = UiAudio::IsVoiceNotePath(attachName) || (attachName == "[VoiceNote]");
 +      const bool isInlineMedia = isVoiceNote || (UiImage::Enabled() &&
 +        (UiImage::IsImagePath(attachName) || (attachName == "[Photo]") || (attachName == "[Sticker]") ||
-+         (UiImage::CanThumbnailVideos() && (attachName == "[Animation]"))));
++         (UiImage::CanThumbnailVideos() &&
++          ((attachName == "[Animation]") || (attachName == "[Video]") || (attachName == "[VideoNote]") ||
++           UiImage::IsVideoPath(attachName)))));
 +      if (isAttachmentPrefetchAll || isInlineMedia || isVoiceNote || (isSelectedMessage && isAttachmentPrefetchSelected))
        {
          if (!UiModel::IsAttachmentDownloaded(fileInfo) && UiModel::IsAttachmentDownloadable(fileInfo))
@@ -5738,7 +5740,7 @@ index ef9da40..08a7dd1 100644
            m_Model->DownloadAttachmentLocked(currentChat.first, currentChat.second, *it,
                                              fileInfo.fileId, DownloadFileActionNone);
            fileInfo = ProtocolUtil::FileInfoFromHex(msg.fileInfo);
-@@ -221,7 +323,57 @@ void UiHistoryView::Draw()
+@@ -221,7 +325,57 @@ void UiHistoryView::Draw()
        }
  
        std::wstring fileStr = attachmentIndicator + StrUtil::ToWString(fileName + fileStatus);
@@ -5797,7 +5799,7 @@ index ef9da40..08a7dd1 100644
      }
  
      // Reactions
-@@ -289,7 +441,7 @@ void UiHistoryView::Draw()
+@@ -289,7 +443,7 @@ void UiHistoryView::Draw()
              reactionsText = StrUtil::Textize(reactionsText);
            }
  
@@ -5806,7 +5808,7 @@ index ef9da40..08a7dd1 100644
            std::wstring reactions = StrUtil::ToWString(reactionsText);
            if (StrUtil::WStringWidth(reactions) > maxReactionsLen)
            {
-@@ -306,7 +458,7 @@ void UiHistoryView::Draw()
+@@ -306,7 +460,7 @@ void UiHistoryView::Draw()
        }
      }
  
@@ -5815,7 +5817,7 @@ index ef9da40..08a7dd1 100644
      if (firstMessage && ((int)wlines.size() > maxMessageLines))
      {
        wlines.resize(maxMessageLines - 1);
-@@ -314,39 +466,154 @@ void UiHistoryView::Draw()
+@@ -314,39 +468,154 @@ void UiHistoryView::Draw()
        reactionLines = 0;
      }
  
@@ -5982,7 +5984,7 @@ index ef9da40..08a7dd1 100644
        }
        else if (isReaction)
        {
-@@ -360,8 +627,54 @@ void UiHistoryView::Draw()
+@@ -360,8 +629,54 @@ void UiHistoryView::Draw()
        if (--y < 0) break;
      }
  
@@ -6037,7 +6039,7 @@ index ef9da40..08a7dd1 100644
      int attributeName = isSelectedMessage ? attributeNameSelected : attributeNameNormal;
      int colorPairName = [&]()
      {
-@@ -398,7 +711,12 @@ void UiHistoryView::Draw()
+@@ -398,7 +713,12 @@ void UiHistoryView::Draw()
      {
        if (msg.timeSent != std::numeric_limits<int64_t>::max())
        {
@@ -6051,7 +6053,7 @@ index ef9da40..08a7dd1 100644
        }
      }
  
-@@ -419,14 +737,76 @@ void UiHistoryView::Draw()
+@@ -419,14 +739,76 @@ void UiHistoryView::Draw()
          L" user " + StrUtil::ToWString(msg.senderId);
      }
  
@@ -6131,7 +6133,7 @@ index ef9da40..08a7dd1 100644
  
      if (--y < 0) break;
  
-@@ -434,6 +814,25 @@ void UiHistoryView::Draw()
+@@ -434,6 +816,25 @@ void UiHistoryView::Draw()
    }
  
    wrefresh(m_PaddedWin);
