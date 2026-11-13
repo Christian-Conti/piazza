@@ -12,7 +12,7 @@ All your chats in one terminal, one tab per service. A patched [nchat](https://g
 - **Replies**: `m` / `Ctrl+M` on a selected message quotes it, quotes show as an inset card.
 - **Paste images** (`Ctrl+V`), **attach files** (`Ctrl+T`, with an upload spinner / progress bar), emoji picker with *recent* and categories, sound on new messages.
 - Truly round bubble corners in kitty (antialiased corner images in the exact color of your theme; block-character corners elsewhere), rounded dialogs, date separators, last-activity times in the contact list, prompt with hint, muted metadata.
-- Colors come from your terminal theme (ANSI colors only). WhatsApp green, Telegram blue, Signal cyan.
+- Colors come from your terminal theme. Sent bubbles use the service color, received ones the same hue muted toward your terminal background (`muted0`..`muted5` in `color.conf`), so the two are clearly distinguishable. WhatsApp green, Telegram blue, Signal cyan.
 
 ## Install
 

@@ -4857,10 +4857,28 @@ index 0000000..59a9ae8
 +bool Poll(); // reap a finished player; true when playback just ended
 +}
 diff --git a/src/uicolorconfig.cpp b/src/uicolorconfig.cpp
-index 5dadae9..92fab51 100644
+index 5dadae9..76df8ad 100644
 --- a/src/uicolorconfig.cpp
 +++ b/src/uicolorconfig.cpp
-@@ -27,70 +27,101 @@ void UiColorConfig::Init()
+@@ -7,6 +7,8 @@
+ 
+ #include "uicolorconfig.h"
+ 
++#include "uiimage.h"
++
+ #include <algorithm>
+ #include <map>
+ #include <string>
+@@ -18,6 +20,8 @@
+ #include "strutil.h"
+ 
+ const static std::string userColor = "usercolor";
++static bool s_MutedDerived = false; // received-bubble shades were created with init_color (slots 16..21)
++static const int kKindAnsi[6] = { 2, 4, 6, 5, 1, 3 };
+ static int colorPairId = 0;
+ 
+ void UiColorConfig::Init()
+@@ -27,70 +31,125 @@ void UiColorConfig::Init()
      start_color();
    }
  
@@ -4964,6 +4982,28 @@ index 5dadae9..92fab51 100644
    };
  
 +  // one color kind per chat service: WhatsApp green, Telegram blue, Signal cyan, others magenta/red/yellow
++  // Received bubbles: same hue as the service color but mixed toward the terminal background (muted/dark), so sent and
++  // received are clearly two different shades. Needs the palette (queried at start) and a terminal that can redefine colors.
++  const bool derived = has_colors() && can_change_color() && (COLORS >= 32) && UiImage::PaletteReady();
++  if (derived)
++  {
++    int bgR = 0, bgG = 0, bgB = 0;
++    UiImage::BackgroundColor(bgR, bgG, bgB);
++    for (int k = 0; k < 6; ++k)
++    {
++      int r = 0, g = 0, b = 0;
++      UiImage::PaletteColor(kKindAnsi[k], r, g, b);
++      const double mix = 0.62; // share of the terminal background
++      const int mr = (int)(r * (1 - mix) + bgR * mix);
++      const int mg = (int)(g * (1 - mix) + bgG * mix);
++      const int mb = (int)(b * (1 - mix) + bgB * mix);
++      init_color(16 + k, (mr * 1000) / 255, (mg * 1000) / 255, (mb * 1000) / 255);
++      UiImage::SetPaletteColor(16 + k, mr, mg, mb);
++    }
++
++    s_MutedDerived = true;
++  }
++
 +  const char* kindBase[6] = { "green", "blue", "cyan", "magenta", "red", "yellow" };
 +  const char* kindLight[6] = { "bright_green", "bright_blue", "bright_cyan", "bright_magenta", "bright_red", "bright_yellow" };
 +  for (int k = 0; k < 6; ++k)
@@ -4973,11 +5013,13 @@ index 5dadae9..92fab51 100644
 +    const std::string id = "_k" + std::to_string(k) + "_color";
 +    defaultConfig["history_text_sent" + id + "_bg"] = base;
 +    defaultConfig["history_text_sent" + id + "_fg"] = dark;
-+    defaultConfig["history_text_recv" + id + "_bg"] = light;
-+    defaultConfig["history_text_recv" + id + "_fg"] = dark;
++    // "muted<k>" = the service hue mixed toward the terminal background (or the light variant if the terminal cannot)
++    const std::string recvBg = "muted" + std::to_string(k);
++    defaultConfig["history_text_recv" + id + "_bg"] = recvBg;
++    defaultConfig["history_text_recv" + id + "_fg"] = "mutedtext";
 +    defaultConfig["history_edge_sent" + id + "_fg"] = base;
 +    defaultConfig["history_edge_sent" + id + "_bg"] = "";
-+    defaultConfig["history_edge_recv" + id + "_fg"] = light;
++    defaultConfig["history_edge_recv" + id + "_fg"] = recvBg;
 +    defaultConfig["history_edge_recv" + id + "_bg"] = "";
 +    defaultConfig["history_quote_sent" + id + "_fg"] = base;
 +    defaultConfig["history_quote_sent" + id + "_bg"] = dark;
@@ -4992,7 +5034,7 @@ index 5dadae9..92fab51 100644
    const std::string configPath(FileUtil::GetApplicationDir() + std::string("/color.conf"));
    m_Config = Config(configPath, defaultConfig);
  
-@@ -107,6 +138,11 @@ void UiColorConfig::Cleanup()
+@@ -107,6 +166,11 @@ void UiColorConfig::Cleanup()
    m_Config.Save();
  }
  
@@ -5004,10 +5046,19 @@ index 5dadae9..92fab51 100644
  int UiColorConfig::GetColorPair(const std::string& p_Param)
  {
    if (!has_colors()) return 0;
-@@ -253,6 +289,13 @@ int UiColorConfig::GetColorId(const std::string& p_Str)
+@@ -253,6 +317,22 @@ int UiColorConfig::GetColorId(const std::string& p_Str)
  
    if (p_Str.empty()) return -1;
  
++  // received-bubble shades: "muted0".."muted5" (hue per service) and "mutedtext" (readable text on them)
++  if ((p_Str.size() == 6) && (p_Str.compare(0, 5, "muted") == 0) && isdigit((unsigned char)p_Str[5]) && (p_Str[5] < '6'))
++  {
++    const int k = p_Str[5] - '0';
++    return s_MutedDerived ? (16 + k) : ((COLORS > 8) ? (8 | kKindAnsi[k]) : kKindAnsi[k]);
++  }
++
++  if (p_Str == "mutedtext") return s_MutedDerived ? COLOR_WHITE : COLOR_BLACK;
++
 +  // xterm-256 palette index, ex: "c24"
 +  if ((p_Str.size() > 1) && (p_Str[0] == 'c') && (p_Str.find_first_not_of("0123456789", 1) == std::string::npos))
 +  {
@@ -5407,7 +5458,7 @@ index 32e8e82..5652628 100644
  
    werase(m_Win);
 diff --git a/src/uihistoryview.cpp b/src/uihistoryview.cpp
-index ef9da40..2d2d495 100644
+index ef9da40..f269f90 100644
 --- a/src/uihistoryview.cpp
 +++ b/src/uihistoryview.cpp
 @@ -7,6 +7,12 @@
@@ -5763,7 +5814,7 @@ index ef9da40..2d2d495 100644
 +    const int cornerIdx = isSelectedMessage ? cornerSelectedIdx : (msg.isOutgoing ? cornerSentIdx[kindIdx] : cornerRecvIdx[kindIdx]);
 +    auto drawEdge = [&](int p_Y, bool p_Top)
 +    {
-+      if (roundImages && (cornerIdx >= 0) && (cornerIdx < 16))
++      if (roundImages && (cornerIdx >= 0) && (cornerIdx < 64))
 +      {
 +        // straight part only; the 2x2-cell corner images supply the rounded ends
 +        const std::wstring straight = std::wstring(std::max(0, bubbleW - 4), p_Top ? L'\u2584' : L'\u2580');
@@ -5783,7 +5834,7 @@ index ef9da40..2d2d495 100644
 +      wattroff(m_PaddedWin, pair);
 +    };
 +
-+    const bool useCornerImages = roundImages && (cornerIdx >= 0) && (cornerIdx < 16);
++    const bool useCornerImages = roundImages && (cornerIdx >= 0) && (cornerIdx < 64);
 +
 +    // quote card: first/last quote row, for the inverse corner images
 +    int quoteFirstIdx = -1;
@@ -6078,10 +6129,10 @@ index ce5934c..03b2c8b 100644
    int m_HistoryShowCount = 0;
 diff --git a/src/uiimage.cpp b/src/uiimage.cpp
 new file mode 100644
-index 0000000..e0bb8fc
+index 0000000..1e1fe44
 --- /dev/null
 +++ b/src/uiimage.cpp
-@@ -0,0 +1,580 @@
+@@ -0,0 +1,642 @@
 +// uiimage.cpp
 +//
 +// shortcut: shells out to `kitten icat` per image on layout change, simple but spawns a process per
@@ -6322,7 +6373,9 @@ index 0000000..e0bb8fc
 +{
 +  uint8_t r = 0, g = 0, b = 0;
 +};
-+static Rgb s_Palette[16];
++static Rgb s_Palette[64];
++static Rgb s_Background;
++static bool s_BackgroundKnown = false;
 +static bool s_PaletteReady = false;
 +
 +// Parse OSC 4 replies: ESC ] 4 ; N ; rgb:RRRR/GGGG/BBBB (ESC \ | BEL)
@@ -6363,7 +6416,65 @@ index 0000000..e0bb8fc
 +    pos = end;
 +  }
 +
++  // default background: ESC ] 11 ; rgb:RRRR/GGGG/BBBB
++  const size_t bgPos = p_Buf.find("\x1b]11;rgb:");
++  if (bgPos != std::string::npos)
++  {
++    size_t end = bgPos + 9;
++    while ((end < p_Buf.size()) && (p_Buf[end] != '\x1b') && (p_Buf[end] != '\a')) ++end;
++    if (end < p_Buf.size())
++    {
++      const std::string spec = p_Buf.substr(bgPos + 9, end - (bgPos + 9));
++      int ch[3] = { 0, 0, 0 };
++      size_t start = 0;
++      bool ok = true;
++      for (int i = 0; i < 3; ++i)
++      {
++        const size_t slash = spec.find('/', start);
++        const std::string hex = spec.substr(start, (slash == std::string::npos) ? std::string::npos : slash - start);
++        if (hex.empty() || (hex.size() > 4)) { ok = false; break; }
++        ch[i] = (int)((strtol(hex.c_str(), nullptr, 16) * 255) / ((1L << (4 * hex.size())) - 1));
++        start = (slash == std::string::npos) ? spec.size() : slash + 1;
++      }
++
++      if (ok)
++      {
++        s_Background = { (uint8_t)ch[0], (uint8_t)ch[1], (uint8_t)ch[2] };
++        s_BackgroundKnown = true;
++      }
++    }
++  }
++
 +  return found;
++}
++
++bool PaletteReady()
++{
++  return s_PaletteReady;
++}
++
++bool PaletteColor(int p_Idx, int& p_R, int& p_G, int& p_B)
++{
++  if (!s_PaletteReady || (p_Idx < 0) || (p_Idx >= 16)) return false;
++  p_R = s_Palette[p_Idx].r;
++  p_G = s_Palette[p_Idx].g;
++  p_B = s_Palette[p_Idx].b;
++  return true;
++}
++
++bool BackgroundColor(int& p_R, int& p_G, int& p_B)
++{
++  if (!s_PaletteReady) return false;
++  const Rgb& c = s_BackgroundKnown ? s_Background : s_Palette[0];
++  p_R = c.r;
++  p_G = c.g;
++  p_B = c.b;
++  return true;
++}
++
++void SetPaletteColor(int p_Idx, int p_R, int p_G, int p_B)
++{
++  if ((p_Idx >= 0) && (p_Idx < 64)) s_Palette[p_Idx] = { (uint8_t)p_R, (uint8_t)p_G, (uint8_t)p_B };
 +}
 +
 +void QueryPalette()
@@ -6378,12 +6489,13 @@ index 0000000..e0bb8fc
 +
 +  std::string query;
 +  for (int i = 0; i < 16; ++i) query += "\x1b]4;" + std::to_string(i) + ";?\x1b\\";
++  query += "\x1b]11;?\x1b\\"; // default background too
 +  if (write(STDOUT_FILENO, query.c_str(), query.size()) < 0) {}
 +
 +  std::string buf;
 +  const int64_t deadline = TimeUtil::GetCurrentTimeMSec() + 500;
 +  int found = 0;
-+  while ((found < 16) && (TimeUtil::GetCurrentTimeMSec() < deadline))
++  while (TimeUtil::GetCurrentTimeMSec() < deadline)
 +  {
 +    struct pollfd pfd = { STDIN_FILENO, POLLIN, 0 };
 +    if (poll(&pfd, 1, 80) <= 0)
@@ -6397,6 +6509,7 @@ index 0000000..e0bb8fc
 +    if (n <= 0) break;
 +    buf.append(tmp, n);
 +    found = ParsePalette(buf);
++    if ((found >= 16) && (buf.find("\x1b]11;rgb:") != std::string::npos)) break;
 +  }
 +
 +  tcsetattr(STDIN_FILENO, TCSAFLUSH, &saved);
@@ -6604,7 +6717,7 @@ index 0000000..e0bb8fc
 +  uint32_t placementId = 1;
 +  for (const auto& c : p_Corners)
 +  {
-+    if ((c.colorIdx < 0) || (c.colorIdx > 15)) continue;
++    if ((c.colorIdx < 0) || (c.colorIdx > 63)) continue;
 +    const uint32_t id = 0x40000000u + ((uint32_t)((c.shape << 4) | c.colorIdx) << 16) + (uint32_t)((cw * 131 + ch) & 0xFFFF);
 +    TransmitCorner(id, c.shape, s_Palette[c.colorIdx], cw, ch, out);
 +    out += "\x1b[" + std::to_string(c.row + 1) + ";" + std::to_string(c.col + 1) + "H";
@@ -6664,10 +6777,10 @@ index 0000000..e0bb8fc
 +}
 diff --git a/src/uiimage.h b/src/uiimage.h
 new file mode 100644
-index 0000000..027fbfe
+index 0000000..2c411f5
 --- /dev/null
 +++ b/src/uiimage.h
-@@ -0,0 +1,53 @@
+@@ -0,0 +1,57 @@
 +// uiimage.h
 +//
 +// Inline image display in kitty-graphics-capable terminals (via `kitten icat`).
@@ -6714,6 +6827,10 @@ index 0000000..027fbfe
 +                 // 4..7: inverse corner (1x1 cell) cutting a round hole corner into a dark quote card
 +  int colorIdx = 0; // ANSI palette index 0..15
 +};
++bool PaletteReady();
++bool PaletteColor(int p_Idx, int& p_R, int& p_G, int& p_B); // ANSI 0..15 as reported by the terminal
++bool BackgroundColor(int& p_R, int& p_G, int& p_B); // terminal default background (falls back to color 0)
++void SetPaletteColor(int p_Idx, int p_R, int p_G, int p_B); // register an RGB for a custom color slot (16..63)
 +void QueryPalette(); // ask the terminal for its 16 ANSI colors; call once before ncurses starts
 +bool RoundedCornersAvailable();
 +void ShowAll(const std::vector<Placement>& p_Placements, const std::vector<Corner>& p_Corners);
