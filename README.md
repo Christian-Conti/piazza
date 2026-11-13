@@ -6,7 +6,7 @@ All your chats in one terminal, one tab per service. A patched [nchat](https://g
 - **Tabs per service** (WhatsApp, Telegram, Signal, ... whatever nchat has an account for), colored per service,
   with unread counts. Adding another account adds another tab, no code change.
 - **Messaging-app layout**: full-height contact column, chat title, rounded colored bubbles (sent on the right).
-- **Inline images, stickers, GIFs** via the kitty graphics protocol; `Enter` enlarges, short videos/GIFs loop in the terminal.
+- **Inline images, stickers, GIFs, videos** via the kitty graphics protocol; a media-only bubble shrinks to the picture size (no file name), videos show a thumbnail with a `▶ 0:12` badge; `Enter` enlarges, short videos/GIFs loop in the terminal.
 - **Voice messages / audio** play inside the bubble (`▶ ━━●──── 0:12/0:31`): select the message, `Space` or `Enter` plays/pauses. `Alt-O` opens the full-screen player.
 - **Replies**: `m` / `Ctrl+M` on a selected message quotes it, quotes show as an inset card.
 - **Paste images** (`Ctrl+V`), **attach files** (`Ctrl+T`, with an upload spinner / progress bar), emoji picker with *recent* and categories, sound on new messages.

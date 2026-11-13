@@ -5407,13 +5407,14 @@ index 32e8e82..5652628 100644
  
    werase(m_Win);
 diff --git a/src/uihistoryview.cpp b/src/uihistoryview.cpp
-index ef9da40..b987a36 100644
+index ef9da40..8319fde 100644
 --- a/src/uihistoryview.cpp
 +++ b/src/uihistoryview.cpp
-@@ -7,6 +7,11 @@
+@@ -7,6 +7,12 @@
  
  #include "uihistoryview.h"
  
++#include <cmath>
 +#include <ctime>
 +
 +#include "uiaudio.h"
@@ -5422,7 +5423,7 @@ index ef9da40..b987a36 100644
  #include "appconfig.h"
  #include "apputil.h"
  #include "fileutil.h"
-@@ -21,6 +26,14 @@
+@@ -21,6 +27,14 @@
  UiHistoryView::UiHistoryView(const UiViewParams& p_Params)
    : UiViewBase(p_Params)
  {
@@ -5437,7 +5438,7 @@ index ef9da40..b987a36 100644
    if (m_Enabled)
    {
      int hpad = (m_X == 0) ? 0 : 1;
-@@ -30,17 +43,24 @@ UiHistoryView::UiHistoryView(const UiViewParams& p_Params)
+@@ -30,17 +44,24 @@ UiHistoryView::UiHistoryView(const UiViewParams& p_Params)
      m_PaddedH = m_H - (vpad * 2);
      m_PaddedW = m_W - (hpad * 2);
      m_PaddedWin = newwin(m_PaddedH, m_PaddedW, paddedY, paddedX);
@@ -5464,7 +5465,7 @@ index ef9da40..b987a36 100644
    if (m_PaddedWin != nullptr)
    {
      delwin(m_PaddedWin);
-@@ -55,15 +75,32 @@ void UiHistoryView::Draw()
+@@ -55,15 +76,32 @@ void UiHistoryView::Draw()
  
    curs_set(0);
  
@@ -5502,7 +5503,7 @@ index ef9da40..b987a36 100644
    static int colorPairNameRecv = UiColorConfig::GetColorPair("history_name_recv_color");
    static int attributeNameNormal = UiColorConfig::GetAttribute("history_name_attr");
    static int attributeNameSelected = UiColorConfig::GetAttribute("history_name_attr_selected");
-@@ -73,6 +110,25 @@ void UiHistoryView::Draw()
+@@ -73,6 +111,25 @@ void UiHistoryView::Draw()
    static std::wstring quoteIndicator = L"> ";
  
    std::pair<std::string, std::string>& currentChat = m_Model->GetCurrentChatLocked();
@@ -5528,7 +5529,7 @@ index ef9da40..b987a36 100644
    const bool emojiEnabled = m_Model->GetEmojiEnabledLocked();
    static const bool developerMode = AppUtil::GetDeveloperMode();
  
-@@ -83,10 +139,39 @@ void UiHistoryView::Draw()
+@@ -83,10 +140,37 @@ void UiHistoryView::Draw()
    int messageOffset = std::max(m_Model->GetMessageOffsetLocked(currentChat.first, currentChat.second), 0);
  
    werase(m_PaddedWin);
@@ -5540,7 +5541,7 @@ index ef9da40..b987a36 100644
  
 +  // chat bubbles: sent on the right, received on the left, max 3/4 of the width
 +  const int rightMargin = 1; // gap between the right bubble edge and the screen
-+  const int bubbleW = std::max(10, std::min(m_PaddedW - rightMargin, (m_PaddedW * 3) / 4));
++  const int fullBubbleW = std::max(10, std::min(m_PaddedW - rightMargin, (m_PaddedW * 3) / 4));
 +
 +  // rounded corners are real antialiased images when the terminal can show them; otherwise block-character corners
 +  const bool roundImages = UiImage::RoundedCornersAvailable();
@@ -5563,13 +5564,16 @@ index ef9da40..b987a36 100644
 +  int paddedBegY = 0;
 +  int paddedBegX = 0;
 +  getbegyx(m_PaddedWin, paddedBegY, paddedBegX);
-+  static const int imageRows = 9;
-+  const int imageCols = std::max(4, std::min(bubbleW - 6, 36));
 +
    bool firstMessage = true;
    int y = m_PaddedH - 1;
    for (auto it = std::next(messageVec.begin(), messageOffset); it != messageVec.end(); ++it)
-@@ -105,20 +190,9 @@ void UiHistoryView::Draw()
+@@ -101,24 +185,14 @@ void UiHistoryView::Draw()
+     }
+ 
+     ChatMessage& msg = msgIt->second;
++    int bubbleW = fullBubbleW; // media-only messages shrink to the picture below
+ 
      int attributeText = isSelectedMessage ? attributeTextSelected : attributeTextNormal;
      int colorPairText = [&]()
      {
@@ -5614,7 +5618,7 @@ index ef9da40..b987a36 100644
          if (!quotedIt->second.text.empty())
          {
            quotedText = StrUtil::Split(quotedIt->second.text, '\n').at(0);
-@@ -161,17 +238,22 @@ void UiHistoryView::Draw()
+@@ -161,17 +238,25 @@ void UiHistoryView::Draw()
          quotedText = "";
        }
  
@@ -5638,12 +5642,15 @@ index ef9da40..b987a36 100644
      }
  
      // File attachment
-+    int imgRows = 0; // blank rows reserved right below the attachment line for an inline image
++    int imgRows = 0; // blank rows reserved for an inline picture (replaces the file-name line)
++    int imgCols = 0;
++    bool imgIsVideo = false;
++    int imgDurationSec = 0;
 +    std::string imgPath;
      if (!msg.fileInfo.empty())
      {
        FileInfo fileInfo = ProtocolUtil::FileInfoFromHex(msg.fileInfo);
-@@ -181,10 +263,24 @@ void UiHistoryView::Draw()
+@@ -181,10 +266,24 @@ void UiHistoryView::Draw()
          (AppConfig::GetNum("attachment_prefetch") == AttachmentPrefetchAll);
        static const bool isAttachmentPrefetchSelected =
          (AppConfig::GetNum("attachment_prefetch") == AttachmentPrefetchSelected);
@@ -5669,10 +5676,11 @@ index ef9da40..b987a36 100644
            m_Model->DownloadAttachmentLocked(currentChat.first, currentChat.second, *it,
                                              fileInfo.fileId, DownloadFileActionNone);
            fileInfo = ProtocolUtil::FileInfoFromHex(msg.fileInfo);
-@@ -221,7 +317,42 @@ void UiHistoryView::Draw()
+@@ -221,7 +320,57 @@ void UiHistoryView::Draw()
        }
  
        std::wstring fileStr = attachmentIndicator + StrUtil::ToWString(fileName + fileStatus);
+-      wlines.insert(wlines.begin(), fileStr);
 +
 +      if ((fileInfo.fileStatus == FileStatusDownloaded) && UiAudio::IsAudioPath(fileInfo.filePath))
 +      {
@@ -5690,8 +5698,6 @@ index ef9da40..b987a36 100644
 +        fileStr = attachmentIndicator + icon + bar + L" " + times;
 +      }
 +
-       wlines.insert(wlines.begin(), fileStr);
-+
 +      if ((fileInfo.fileStatus == FileStatusDownloaded) && UiImage::IsAutoDownload(fileInfo.fileId))
 +      {
 +        UiImage::RememberAutoFile(fileInfo.filePath); // session-only copy, deleted at exit
@@ -5705,14 +5711,31 @@ index ef9da40..b987a36 100644
 +
 +        if (!imgPath.empty())
 +        {
-+          imgRows = imageRows;
-+          wlines.insert(std::next(wlines.begin()), imgRows, std::wstring(L" "));
++          // picture box from the real size: fit into the bubble keeping the aspect, never scaled up
++          int cw = 10, ch = 22;
++          UiImage::CellPixelSize(cw, ch);
++          int iw = 0, ih = 0;
++          const int maxCols = std::max(8, std::min(fullBubbleW - 6, 44));
++          if (!UiImage::ImagePixelSize(imgPath, iw, ih)) { iw = maxCols * cw; ih = (iw * 3) / 4; } // unknown size: assume 4:3, full width
++          const int maxRows = std::max(4, std::min(16, (m_PaddedH / 2) - 3));
++          const double scale = std::min(1.0, std::min((double)maxCols * cw / iw, (double)maxRows * ch / ih));
++          imgCols = std::max(4, (int)std::ceil(iw * scale / cw));
++          imgRows = std::max(2, (int)std::lround(ih * scale / ch));
++          imgIsVideo = UiImage::IsVideoPath(fileInfo.filePath);
++          imgDurationSec = imgIsVideo ? UiAudio::Duration(fileInfo.filePath) : 0;
++          if (msg.text.empty() && msg.quotedId.empty()) bubbleW = std::max(10, std::min(fullBubbleW, imgCols + 4));
++          wlines.insert(wlines.begin(), imgRows, std::wstring(L" "));
 +        }
++      }
++
++      if (imgPath.empty())
++      {
++        wlines.insert(wlines.begin(), fileStr); // no picture: show the file line (name, download state, audio player)
 +      }
      }
  
      // Reactions
-@@ -289,7 +420,7 @@ void UiHistoryView::Draw()
+@@ -289,7 +438,7 @@ void UiHistoryView::Draw()
              reactionsText = StrUtil::Textize(reactionsText);
            }
  
@@ -5721,7 +5744,7 @@ index ef9da40..b987a36 100644
            std::wstring reactions = StrUtil::ToWString(reactionsText);
            if (StrUtil::WStringWidth(reactions) > maxReactionsLen)
            {
-@@ -306,7 +437,7 @@ void UiHistoryView::Draw()
+@@ -306,7 +455,7 @@ void UiHistoryView::Draw()
        }
      }
  
@@ -5730,7 +5753,7 @@ index ef9da40..b987a36 100644
      if (firstMessage && ((int)wlines.size() > maxMessageLines))
      {
        wlines.resize(maxMessageLines - 1);
-@@ -314,39 +445,135 @@ void UiHistoryView::Draw()
+@@ -314,39 +463,153 @@ void UiHistoryView::Draw()
        reactionLines = 0;
      }
  
@@ -5793,14 +5816,15 @@ index ef9da40..b987a36 100644
      for (auto wline = wlines.rbegin(); wline != wlines.rend(); ++wline)
      {
 +      const int lineIdx = (int)wlines.size() - 1 - (int)std::distance(wlines.rbegin(), wline);
-+      if ((imgRows > 0) && (lineIdx == 1))
++      if ((imgRows > 0) && (lineIdx == 0))
 +      {
 +        // top row of the image block: remember where to draw the picture once the window is flushed
 +        UiImage::Placement placement;
 +        placement.path = imgPath;
-+        placement.x = paddedBegX + bx + 3;
++        placement.x = paddedBegX + bx + 2;
 +        placement.y = paddedBegY + y;
-+        placement.cols = imageCols;
++        placement.cols = imgCols;
++        placement.z = imgIsVideo ? -1 : 0; // below the text, so the play badge stays visible
 +        placement.rows = imgRows;
 +        placements.push_back(placement);
 +      }
@@ -5851,10 +5875,27 @@ index ef9da40..b987a36 100644
        }
 -      else if (isQuote)
 +
-+      const bool isCornerRow = useCornerImages && ((lineIdx == 0) || (lineIdx == (int)wlines.size() - 1));
-+      if (isCornerRow)
++      if (imgIsVideo && (imgRows > 0) && (lineIdx == imgRows / 2))
        {
 -        wattroff(m_PaddedWin, attributeText | colorPairTextQuoted);
++        // play badge (with duration) centered on the thumbnail; the picture is drawn below the text
++        std::wstring badge = L" \u25b6 ";
++        if (imgDurationSec > 0)
++        {
++          badge += StrUtil::ToWString(std::to_string(imgDurationSec / 60) + ":" + (imgDurationSec % 60 < 10 ? "0" : "") +
++                                      std::to_string(imgDurationSec % 60)) + L" ";
++        }
++
++        const int badgeX = bx + 2 + std::max(0, (imgCols - StrUtil::WStringWidth(badge)) / 2);
++        const int badgePair = msg.isOutgoing ? kind.quoteSent : kind.quoteRecv;
++        wattron(m_PaddedWin, A_BOLD | badgePair);
++        mvwaddnwstr(m_PaddedWin, y, badgeX, badge.c_str(), (int)badge.size());
++        wattroff(m_PaddedWin, A_BOLD | badgePair);
++      }
++
++      const bool isCornerRow = useCornerImages && ((lineIdx == 0) || (lineIdx == (int)wlines.size() - 1));
++      if (isCornerRow)
++      {
 +        // the corner image paints these cells, so they must be transparent underneath
 +        wattron(m_PaddedWin, colorPairPane);
 +        mvwaddnwstr(m_PaddedWin, y, bx, L"  ", 2);
@@ -5878,7 +5919,7 @@ index ef9da40..b987a36 100644
        }
        else if (isReaction)
        {
-@@ -360,8 +587,30 @@ void UiHistoryView::Draw()
+@@ -360,8 +623,30 @@ void UiHistoryView::Draw()
        if (--y < 0) break;
      }
  
@@ -5909,7 +5950,7 @@ index ef9da40..b987a36 100644
      int attributeName = isSelectedMessage ? attributeNameSelected : attributeNameNormal;
      int colorPairName = [&]()
      {
-@@ -398,7 +647,12 @@ void UiHistoryView::Draw()
+@@ -398,7 +683,12 @@ void UiHistoryView::Draw()
      {
        if (msg.timeSent != std::numeric_limits<int64_t>::max())
        {
@@ -5923,7 +5964,7 @@ index ef9da40..b987a36 100644
        }
      }
  
-@@ -419,14 +673,76 @@ void UiHistoryView::Draw()
+@@ -419,14 +709,76 @@ void UiHistoryView::Draw()
          L" user " + StrUtil::ToWString(msg.senderId);
      }
  
@@ -6003,7 +6044,7 @@ index ef9da40..b987a36 100644
  
      if (--y < 0) break;
  
-@@ -434,6 +750,18 @@ void UiHistoryView::Draw()
+@@ -434,6 +786,18 @@ void UiHistoryView::Draw()
    }
  
    wrefresh(m_PaddedWin);
@@ -6036,10 +6077,10 @@ index ce5934c..03b2c8b 100644
    int m_HistoryShowCount = 0;
 diff --git a/src/uiimage.cpp b/src/uiimage.cpp
 new file mode 100644
-index 0000000..43ba070
+index 0000000..483ddcc
 --- /dev/null
 +++ b/src/uiimage.cpp
-@@ -0,0 +1,466 @@
+@@ -0,0 +1,551 @@
 +// uiimage.cpp
 +//
 +// shortcut: shells out to `kitten icat` per image on layout change, simple but spawns a process per
@@ -6054,6 +6095,7 @@ index 0000000..43ba070
 +
 +#include <algorithm>
 +#include <cmath>
++#include <map>
 +#include <set>
 +#include <cstdio>
 +#include <cstdlib>
@@ -6073,6 +6115,84 @@ index 0000000..43ba070
 +{
 +  static const bool enabled = (getenv("KITTY_WINDOW_ID") != nullptr);
 +  return enabled;
++}
++
++bool CellPixelSize(int& p_W, int& p_H);
++
++// reads width/height from the file header, no decoding
++bool ImagePixelSize(const std::string& p_Path, int& p_W, int& p_H)
++{
++  static std::map<std::string, std::pair<int, int>> cache;
++  auto it = cache.find(p_Path);
++  if (it != cache.end())
++  {
++    p_W = it->second.first;
++    p_H = it->second.second;
++    return p_W > 0;
++  }
++
++  int w = 0, h = 0;
++  FILE* f = fopen(p_Path.c_str(), "rb");
++  if (f != nullptr)
++  {
++    std::vector<uint8_t> b(512 * 1024);
++    const size_t n = fread(b.data(), 1, b.size(), f);
++    fclose(f);
++    b.resize(n);
++    auto be16 = [&](size_t i) { return (int)((b[i] << 8) | b[i + 1]); };
++    auto be32 = [&](size_t i) { return (int)((b[i] << 24) | (b[i + 1] << 16) | (b[i + 2] << 8) | b[i + 3]); };
++    if ((n > 24) && (b[0] == 0x89) && (b[1] == 'P'))
++    {
++      w = be32(16);
++      h = be32(20);
++    }
++    else if ((n > 10) && (b[0] == 'G') && (b[1] == 'I') && (b[2] == 'F'))
++    {
++      w = b[6] | (b[7] << 8);
++      h = b[8] | (b[9] << 8);
++    }
++    else if ((n > 30) && (b[0] == 'R') && (b[1] == 'I') && (b[8] == 'W') && (b[9] == 'E'))
++    {
++      if ((b[12] == 'V') && (b[15] == 'X'))
++      {
++        w = 1 + (b[24] | (b[25] << 8) | (b[26] << 16));
++        h = 1 + (b[27] | (b[28] << 8) | (b[29] << 16));
++      }
++      else if ((b[12] == 'V') && (b[15] == 'L'))
++      {
++        w = 1 + (((b[22] & 0x3f) << 8) | b[21]);
++        h = 1 + (((b[24] & 0x0f) << 10) | (b[23] << 2) | ((b[22] & 0xc0) >> 6));
++      }
++      else if ((b[12] == 'V') && (b[15] == ' '))
++      {
++        w = (b[26] | (b[27] << 8)) & 0x3fff;
++        h = (b[28] | (b[29] << 8)) & 0x3fff;
++      }
++    }
++    else if ((n > 4) && (b[0] == 0xFF) && (b[1] == 0xD8))
++    {
++      size_t i = 2;
++      while (i + 9 < n)
++      {
++        if (b[i] != 0xFF) { ++i; continue; }
++        const int marker = b[i + 1];
++        if ((marker >= 0xC0) && (marker <= 0xCF) && (marker != 0xC4) && (marker != 0xC8) && (marker != 0xCC))
++        {
++          h = be16(i + 5);
++          w = be16(i + 7);
++          break;
++        }
++
++        if ((marker == 0xFF) || (marker == 0x01) || ((marker >= 0xD0) && (marker <= 0xD9))) { i += 2; continue; }
++        i += 2 + be16(i + 2);
++      }
++    }
++  }
++
++  cache[p_Path] = std::make_pair(w, h);
++  p_W = w;
++  p_H = h;
++  return w > 0;
 +}
 +
 +bool IsImagePath(const std::string& p_Path)
@@ -6291,6 +6411,11 @@ index 0000000..43ba070
 +  return (p_W >= 4) && (p_H >= 8);
 +}
 +
++bool CellPixelSize(int& p_W, int& p_H)
++{
++  return CellPixels(p_W, p_H);
++}
++
 +bool RoundedCornersAvailable()
 +{
 +  int w = 0, h = 0;
@@ -6475,8 +6600,9 @@ index 0000000..43ba070
 +
 +  for (const auto& p : p_Placements)
 +  {
-+    Run("--align=left --place=" + std::to_string(p.cols) + "x" + std::to_string(p.rows) + "@" +
-+        std::to_string(p.x) + "x" + std::to_string(p.y) + " '" + StrUtil::EscapeSingleQuote(p.path) + "'");
++    Run(std::string("--align=left ") + (p.z < 0 ? "--z-index=" + std::to_string(p.z) + " " : "") + "--place=" +
++        std::to_string(p.cols) + "x" + std::to_string(p.rows) + "@" + std::to_string(p.x) + "x" +
++        std::to_string(p.y) + " '" + StrUtil::EscapeSingleQuote(p.path) + "'");
 +  }
 +
 +  if (haveCells && s_PaletteReady && !p_Corners.empty())
@@ -6508,10 +6634,10 @@ index 0000000..43ba070
 +}
 diff --git a/src/uiimage.h b/src/uiimage.h
 new file mode 100644
-index 0000000..7aecdc4
+index 0000000..faa18b7
 --- /dev/null
 +++ b/src/uiimage.h
-@@ -0,0 +1,48 @@
+@@ -0,0 +1,51 @@
 +// uiimage.h
 +//
 +// Inline image display in kitty-graphics-capable terminals (via `kitten icat`).
@@ -6530,9 +6656,12 @@ index 0000000..7aecdc4
 +  int y = 0; // screen cell row (0-based)
 +  int cols = 0;
 +  int rows = 0;
++  int z = 0; // negative: text is drawn over the picture (used for the video play badge)
 +};
 +
 +bool Enabled();
++bool ImagePixelSize(const std::string& p_Path, int& p_W, int& p_H); // png/jpeg/gif/webp header, cached
++bool CellPixelSize(int& p_W, int& p_H); // size of one terminal cell in pixels, false if unknown
 +bool IsImagePath(const std::string& p_Path);
 +bool IsVideoPath(const std::string& p_Path); // mp4/webm/mov/mkv: Telegram/WhatsApp "GIFs" are mp4
 +std::string DisplayablePath(const std::string& p_Path); // image path kitty can decode (webp -> png via ffmpeg)
