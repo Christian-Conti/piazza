@@ -6129,10 +6129,10 @@ index ce5934c..03b2c8b 100644
    int m_HistoryShowCount = 0;
 diff --git a/src/uiimage.cpp b/src/uiimage.cpp
 new file mode 100644
-index 0000000..1e1fe44
+index 0000000..3cf5e2a
 --- /dev/null
 +++ b/src/uiimage.cpp
-@@ -0,0 +1,642 @@
+@@ -0,0 +1,643 @@
 +// uiimage.cpp
 +//
 +// shortcut: shells out to `kitten icat` per image on layout change, simple but spawns a process per
@@ -6718,7 +6718,8 @@ index 0000000..1e1fe44
 +  for (const auto& c : p_Corners)
 +  {
 +    if ((c.colorIdx < 0) || (c.colorIdx > 63)) continue;
-+    const uint32_t id = 0x40000000u + ((uint32_t)((c.shape << 4) | c.colorIdx) << 16) + (uint32_t)((cw * 131 + ch) & 0xFFFF);
++    // shape needs 3 bits and the color index 6 (custom slots go up to 63): keep the fields apart or ids collide
++    const uint32_t id = 0x40000000u + ((uint32_t)((c.shape << 6) | c.colorIdx) << 16) + (uint32_t)((cw * 131 + ch) & 0xFFFF);
 +    TransmitCorner(id, c.shape, s_Palette[c.colorIdx], cw, ch, out);
 +    out += "\x1b[" + std::to_string(c.row + 1) + ";" + std::to_string(c.col + 1) + "H";
 +    const std::string span = (c.shape >= 4) ? "c=1,r=1" : "c=2,r=2";
