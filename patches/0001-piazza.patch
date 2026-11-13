@@ -7408,7 +7408,7 @@ index f5af7384..20871360 100644
      m_Result = false;
      m_Running = false;
 diff --git a/src/uimodel.cpp b/src/uimodel.cpp
-index d40b779d..553465bb 100644
+index d40b779d..f1505091 100644
 --- a/src/uimodel.cpp
 +++ b/src/uimodel.cpp
 @@ -8,6 +8,7 @@
@@ -7766,7 +7766,17 @@ index d40b779d..553465bb 100644
      {
        unreadVec.push_back(i);
        if (m_CurrentChatIndex == (int)i)
-@@ -1348,6 +1597,9 @@ void UiModel::Impl::TransferFile(const std::vector<std::string>& p_FilePaths)
+@@ -840,6 +1089,9 @@ void UiModel::Impl::MarkRead(const std::string& p_ProfileId, const std::string&
+   const bool markReadEveryView = HasProtocolFeature(p_ProfileId, FeatureMarkReadEveryView);
+   if (!markReadEveryView && !p_WasUnread) return;
+ 
++  // chat preview: while the chat list has focus the right pane only shows the chat, nothing is marked read
++  if (m_FocusList) return;
++
+   // mark_read_on_view must be enabled (default), or user has performed view end of history action; page down, end, etc
+   static const bool markReadOnView = UiConfig::GetBool("mark_read_on_view");
+   if (!markReadOnView && !m_HistoryInteraction) return;
+@@ -1348,6 +1600,9 @@ void UiModel::Impl::TransferFile(const std::vector<std::string>& p_FilePaths)
        FileInfo fileInfo;
        fileInfo.filePath = filePath;
        fileInfo.fileType = FileUtil::GetMimeType(filePath);
@@ -7776,7 +7786,7 @@ index d40b779d..553465bb 100644
  
        std::shared_ptr<SendMessageRequest> sendMessageRequest =
          std::make_shared<SendMessageRequest>();
-@@ -1372,13 +1624,14 @@ void UiModel::Impl::TransferFile(const std::vector<std::string>& p_FilePaths)
+@@ -1372,13 +1627,14 @@ void UiModel::Impl::TransferFile(const std::vector<std::string>& p_FilePaths)
          }
        }
  
@@ -7792,7 +7802,7 @@ index d40b779d..553465bb 100644
          }
        }
  
-@@ -1860,7 +2113,12 @@ void UiModel::Impl::MessageHandler(std::shared_ptr<ServiceMessage> p_ServiceMess
+@@ -1860,7 +2116,12 @@ void UiModel::Impl::MessageHandler(std::shared_ptr<ServiceMessage> p_ServiceMess
        {
          std::shared_ptr<SendMessageNotify> sendMessageNotify = std::static_pointer_cast<SendMessageNotify>(
            p_ServiceMessage);
@@ -7806,7 +7816,7 @@ index d40b779d..553465bb 100644
        }
        break;
  
-@@ -2392,6 +2650,12 @@ void UiModel::Impl::MessageHandler(std::shared_ptr<ServiceMessage> p_ServiceMess
+@@ -2392,6 +2653,12 @@ void UiModel::Impl::MessageHandler(std::shared_ptr<ServiceMessage> p_ServiceMess
  
              SetSelectMessageActive(true);
              messageOffset = newMessageOffset;
@@ -7819,7 +7829,7 @@ index d40b779d..553465bb 100644
              RequestMessagesCurrentChat();
              UpdateHistory();
            }
-@@ -2441,6 +2705,8 @@ bool UiModel::Impl::Process()
+@@ -2441,6 +2708,8 @@ bool UiModel::Impl::Process()
  
  void UiModel::Impl::ProcessTimers()
  {
@@ -7828,7 +7838,7 @@ index d40b779d..553465bb 100644
    static int64_t lastTimeMs = TimeUtil::GetCurrentTimeMSec();
    int64_t nowTimeMs = TimeUtil::GetCurrentTimeMSec();
    int64_t elapsedMs = nowTimeMs - lastTimeMs;
-@@ -2497,12 +2763,7 @@ void UiModel::Impl::SortChats()
+@@ -2497,12 +2766,7 @@ void UiModel::Impl::SortChats()
  
    if (!m_ChatVec.empty())
    {
@@ -7842,7 +7852,7 @@ index d40b779d..553465bb 100644
      {
        for (size_t i = 0; i < m_ChatVec.size(); ++i)
        {
-@@ -2615,6 +2876,8 @@ void UiModel::Impl::UpdateChatInfoIsUnread(const std::string& p_ProfileId, const
+@@ -2615,6 +2879,8 @@ void UiModel::Impl::UpdateChatInfoIsUnread(const std::string& p_ProfileId, const
              m_TriggerTerminalBell = true;
            }
  
@@ -7851,7 +7861,7 @@ index d40b779d..553465bb 100644
            bool desktopNotify = false;
            if (m_TerminalActive)
            {
-@@ -2838,6 +3101,7 @@ std::string UiModel::Impl::GetChatStatus(const std::string& p_ProfileId, const s
+@@ -2838,6 +3104,7 @@ std::string UiModel::Impl::GetChatStatus(const std::string& p_ProfileId, const s
  
  void UiModel::Impl::OnCurrentChatChanged()
  {
@@ -7859,7 +7869,7 @@ index d40b779d..553465bb 100644
    LOG_TRACE("current chat %s %s", m_CurrentChat.first.c_str(), m_CurrentChat.second.c_str());
    SetHistoryInteraction(false);
    UpdateList();
-@@ -3258,15 +3522,11 @@ bool UiModel::Impl::IsCurrentChatSet()
+@@ -3258,15 +3525,11 @@ bool UiModel::Impl::IsCurrentChatSet()
    return (m_CurrentChatIndex >= 0);
  }
  
@@ -7878,7 +7888,7 @@ index d40b779d..553465bb 100644
  }
  
  void UiModel::Impl::SetTerminalActive(bool p_TerminalActive)
-@@ -3293,6 +3553,36 @@ void UiModel::Impl::SetTerminalActive(bool p_TerminalActive)
+@@ -3293,6 +3556,36 @@ void UiModel::Impl::SetTerminalActive(bool p_TerminalActive)
    }
  }
  
@@ -7915,7 +7925,7 @@ index d40b779d..553465bb 100644
  void UiModel::Impl::DesktopNotify(const std::string& p_Name, const std::string& p_Text)
  {
    static const bool desktopNotifyEnabled = UiConfig::GetBool("desktop_notify_enabled");
-@@ -3723,6 +4013,353 @@ void UiModel::Impl::SaveEditMessage()
+@@ -3723,6 +4016,353 @@ void UiModel::Impl::SaveEditMessage()
    Clear(false /*p_AllowUndo*/);
  }
  
@@ -8269,7 +8279,7 @@ index d40b779d..553465bb 100644
  void UiModel::Impl::OnKeyCancel()
  {
    AnyUserKeyInput();
-@@ -3733,6 +4370,8 @@ void UiModel::Impl::OnKeyCancel()
+@@ -3733,6 +4373,8 @@ void UiModel::Impl::OnKeyCancel()
      SetEditMessageActive(false);
    }
  
@@ -8278,7 +8288,7 @@ index d40b779d..553465bb 100644
    Clear(allowUndo);
  }
  
-@@ -4292,6 +4931,13 @@ void UiModel::Impl::PerformForwardMessage(const std::pair<std::string, std::stri
+@@ -4292,6 +4934,13 @@ void UiModel::Impl::PerformForwardMessage(const std::pair<std::string, std::stri
      message = msg->second;
    }
  
@@ -8292,7 +8302,7 @@ index d40b779d..553465bb 100644
    // switch current chat to recipient
    bool found = false;
    for (size_t i = 0; i < m_ChatVec.size(); ++i)
-@@ -4309,6 +4955,7 @@ void UiModel::Impl::PerformForwardMessage(const std::pair<std::string, std::stri
+@@ -4309,6 +4958,7 @@ void UiModel::Impl::PerformForwardMessage(const std::pair<std::string, std::stri
    {
      // fetch recipient messages before send, to avoid fetching outgoing message with temporary id
      OnCurrentChatChanged();
@@ -8300,7 +8310,7 @@ index d40b779d..553465bb 100644
    }
    else
    {
-@@ -4385,14 +5032,24 @@ void UiModel::Impl::AddQuoteFromSelectedMessage(ChatMessage& p_ChatMessage)
+@@ -4385,14 +5035,24 @@ void UiModel::Impl::AddQuoteFromSelectedMessage(ChatMessage& p_ChatMessage)
    const int messageOffset = m_MessageOffset[profileId][chatId];
    const std::unordered_map<std::string, ChatMessage>& messages = m_Messages[profileId][chatId];
  
@@ -8330,7 +8340,7 @@ index d40b779d..553465bb 100644
    if (msg == messages.end())
    {
      LOG_WARNING("error finding selected message content");
-@@ -4571,6 +5228,16 @@ void UiModel::KeyHandler(wint_t p_Key)
+@@ -4571,6 +5231,16 @@ void UiModel::KeyHandler(wint_t p_Key)
    static wint_t keyHome = UiKeyConfig::GetKey("home");
  
    static wint_t keySendMsg = UiKeyConfig::GetKey("send_msg");
@@ -8347,7 +8357,7 @@ index d40b779d..553465bb 100644
    static wint_t keyNextChat = UiKeyConfig::GetKey("next_chat");
    static wint_t keyPrevChat = UiKeyConfig::GetKey("prev_chat");
    static wint_t keyUnreadChat = UiKeyConfig::GetKey("unread_chat");
-@@ -4625,7 +5292,17 @@ void UiModel::KeyHandler(wint_t p_Key)
+@@ -4625,7 +5295,17 @@ void UiModel::KeyHandler(wint_t p_Key)
    static wint_t keyAutoCompose = UiKeyConfig::GetKey("auto_compose");
    static wint_t keySelectMention = UiKeyConfig::GetKey("select_mention");
  
@@ -8366,7 +8376,7 @@ index d40b779d..553465bb 100644
    {
      std::unique_lock<owned_mutex> lock(m_ModelMutex);
      GetImpl().TerminalResize();
-@@ -4660,6 +5337,26 @@ void UiModel::KeyHandler(wint_t p_Key)
+@@ -4660,6 +5340,26 @@ void UiModel::KeyHandler(wint_t p_Key)
      std::unique_lock<owned_mutex> lock(m_ModelMutex);
      GetImpl().OnKeyToggleEmoji();
    }
@@ -8393,7 +8403,7 @@ index d40b779d..553465bb 100644
    else if (p_Key == keyNextChat)
    {
      std::unique_lock<owned_mutex> lock(m_ModelMutex);
-@@ -4796,8 +5493,15 @@ void UiModel::KeyHandler(wint_t p_Key)
+@@ -4796,8 +5496,15 @@ void UiModel::KeyHandler(wint_t p_Key)
    }
    else if (p_Key == keyCancel)
    {
@@ -8411,7 +8421,7 @@ index d40b779d..553465bb 100644
    }
    else if (p_Key == keyDecreaseListWidth)
    {
-@@ -4821,7 +5525,14 @@ void UiModel::KeyHandler(wint_t p_Key)
+@@ -4821,7 +5528,14 @@ void UiModel::KeyHandler(wint_t p_Key)
    else if (p_Key == keyJumpQuoted)
    {
      std::unique_lock<owned_mutex> lock(m_ModelMutex);
@@ -8427,7 +8437,7 @@ index d40b779d..553465bb 100644
    }
    else if (p_Key == keyJumpPinned)
    {
-@@ -4852,6 +5563,12 @@ void UiModel::KeyHandler(wint_t p_Key)
+@@ -4852,6 +5566,12 @@ void UiModel::KeyHandler(wint_t p_Key)
    {
      OnKeyAutoCompose();
    }
@@ -8440,7 +8450,7 @@ index d40b779d..553465bb 100644
    else
    {
      std::unique_lock<owned_mutex> lock(m_ModelMutex);
-@@ -5055,6 +5772,78 @@ std::string UiModel::GetContactPhoneLocked(const std::string& p_ProfileId, const
+@@ -5055,6 +5775,78 @@ std::string UiModel::GetContactPhoneLocked(const std::string& p_ProfileId, const
    return GetImpl().GetContactPhone(p_ProfileId, p_ChatId);
  }
  
@@ -8519,7 +8529,7 @@ index d40b779d..553465bb 100644
  int UiModel::GetCurrentChatIndexLocked()
  {
    nc_assert(m_ModelMutex.owns_lock());
-@@ -5265,7 +6054,9 @@ std::vector<std::string> UiModel::SelectFile()
+@@ -5265,7 +6057,9 @@ std::vector<std::string> UiModel::SelectFile()
      static const bool filePickerPersistDir = UiConfig::GetBool("file_picker_persist_dir");
      if (!filePickerPersistDir || currentDir.empty())
      {
@@ -8530,7 +8540,7 @@ index d40b779d..553465bb 100644
      }
  
      UiDialogParams params(this, "Send File", 0.75, 0.65);
-@@ -5284,9 +6075,18 @@ std::vector<std::string> UiModel::SelectFile()
+@@ -5284,9 +6078,18 @@ std::vector<std::string> UiModel::SelectFile()
  void UiModel::OnKeyTransfer()
  {
    // Pre-req
@@ -8549,7 +8559,7 @@ index d40b779d..553465bb 100644
    }
  
    // Open modal dialog without model mutex held
-@@ -5760,7 +6560,29 @@ void UiModel::OnKeyCopy()
+@@ -5760,7 +6563,29 @@ void UiModel::OnKeyCopy()
  
  void UiModel::OnKeyPaste()
  {
@@ -8580,7 +8590,7 @@ index d40b779d..553465bb 100644
    {
      // Open modal dialog without model mutex held
      static const bool confirmSendPastedImage = UiConfig::GetBool("confirm_send_pasted_image");
-@@ -5774,8 +6596,9 @@ void UiModel::OnKeyPaste()
+@@ -5774,8 +6599,9 @@ void UiModel::OnKeyPaste()
  
      static int index = 0;
      ++index;

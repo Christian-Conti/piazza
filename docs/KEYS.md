@@ -7,6 +7,7 @@
 | `Ctrl-B` | next chat in tab |
 | `←` / `→` | focus contacts / messages (with an empty prompt) |
 | `↑` `↓` | contacts (list focused) or messages |
+| `←` then `↑` `↓` | **preview**: browse chats with the list focused; the right pane shows them but nothing is marked read until you open one (`→` or start typing) |
 | `Esc` | leave message selection / quote, focus contacts |
 | `Enter` | send; on a selected attachment: enlarge |
 | `Shift-Enter` (`Alt-Enter`) | new line |
