@@ -11,6 +11,7 @@
 | `Enter` | send; on a selected attachment: enlarge |
 | `Shift-Enter` (`Alt-Enter`) | new line |
 | `1`..`6` on a selected message | quick reaction 👍 ❤️ 😂 😮 😢 🙏 (same key again removes it) |
+| `f` / `Alt-R` on a selected message | forward it: pick any chat of any service (type to filter), `Enter` sends |
 | `r` / `Alt-S` on a selected message | full reaction list |
 | `m` / `Ctrl-M` / `Alt-M` | on a selected message: quote it; again: drop quote |
 | `Ctrl-V` / `Alt-V` | paste text or image |

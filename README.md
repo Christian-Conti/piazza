@@ -10,6 +10,7 @@ All your chats in one terminal, one tab per service. A patched [nchat](https://g
 - **Voice messages / audio** play inside the bubble (`▶ ━━●──── 0:12/0:31`): select the message, `Space` or `Enter` plays/pauses. `Alt-O` opens the full-screen player.
 - **Reactions**: select a message, `1`..`6` give 👍 ❤️ 😂 😮 😢 🙏 (again = remove), `r` opens the full list.
 - **Touch / mouse**: tap a chat, a tab or a bubble to open/select it; tap a quote card to jump to the message it quotes; the wheel scrolls (hold Shift to select text, `mouse_enabled=0` in `ui.conf` turns it off).
+- **Forward** a selected message to any chat of any service with `f` (type to filter the chat list); attachments must be downloaded first.
 - **Replies**: `m` / `Ctrl+M` on a selected message quotes it, quotes show as an inset card.
 - **Paste images** (`Ctrl+V`), **attach files** (`Ctrl+T`, with an upload spinner / progress bar), emoji picker with *recent* and categories, sound on new messages.
 - Truly round bubble corners in kitty (antialiased corner images in the exact color of your theme; block-character corners elsewhere), rounded dialogs, date separators, last-activity times in the contact list, prompt with hint, muted metadata.
