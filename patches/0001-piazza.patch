@@ -5466,13 +5466,14 @@ index 32e8e82..5652628 100644
  
    werase(m_Win);
 diff --git a/src/uihistoryview.cpp b/src/uihistoryview.cpp
-index ef9da40..e8e8eb0 100644
+index ef9da40..08a7dd1 100644
 --- a/src/uihistoryview.cpp
 +++ b/src/uihistoryview.cpp
-@@ -7,6 +7,12 @@
+@@ -7,6 +7,13 @@
  
  #include "uihistoryview.h"
  
++#include <algorithm>
 +#include <cmath>
 +#include <ctime>
 +
@@ -5482,7 +5483,7 @@ index ef9da40..e8e8eb0 100644
  #include "appconfig.h"
  #include "apputil.h"
  #include "fileutil.h"
-@@ -21,6 +27,14 @@
+@@ -21,6 +28,14 @@
  UiHistoryView::UiHistoryView(const UiViewParams& p_Params)
    : UiViewBase(p_Params)
  {
@@ -5497,7 +5498,7 @@ index ef9da40..e8e8eb0 100644
    if (m_Enabled)
    {
      int hpad = (m_X == 0) ? 0 : 1;
-@@ -30,17 +44,24 @@ UiHistoryView::UiHistoryView(const UiViewParams& p_Params)
+@@ -30,17 +45,24 @@ UiHistoryView::UiHistoryView(const UiViewParams& p_Params)
      m_PaddedH = m_H - (vpad * 2);
      m_PaddedW = m_W - (hpad * 2);
      m_PaddedWin = newwin(m_PaddedH, m_PaddedW, paddedY, paddedX);
@@ -5524,7 +5525,7 @@ index ef9da40..e8e8eb0 100644
    if (m_PaddedWin != nullptr)
    {
      delwin(m_PaddedWin);
-@@ -55,15 +76,32 @@ void UiHistoryView::Draw()
+@@ -55,15 +77,32 @@ void UiHistoryView::Draw()
  
    curs_set(0);
  
@@ -5562,7 +5563,7 @@ index ef9da40..e8e8eb0 100644
    static int colorPairNameRecv = UiColorConfig::GetColorPair("history_name_recv_color");
    static int attributeNameNormal = UiColorConfig::GetAttribute("history_name_attr");
    static int attributeNameSelected = UiColorConfig::GetAttribute("history_name_attr_selected");
-@@ -73,6 +111,24 @@ void UiHistoryView::Draw()
+@@ -73,6 +112,24 @@ void UiHistoryView::Draw()
    static std::wstring quoteIndicator = L"> ";
  
    std::pair<std::string, std::string>& currentChat = m_Model->GetCurrentChatLocked();
@@ -5587,7 +5588,7 @@ index ef9da40..e8e8eb0 100644
    const bool emojiEnabled = m_Model->GetEmojiEnabledLocked();
    static const bool developerMode = AppUtil::GetDeveloperMode();
  
-@@ -83,10 +139,38 @@ void UiHistoryView::Draw()
+@@ -83,10 +140,38 @@ void UiHistoryView::Draw()
    int messageOffset = std::max(m_Model->GetMessageOffsetLocked(currentChat.first, currentChat.second), 0);
  
    werase(m_PaddedWin);
@@ -5627,7 +5628,7 @@ index ef9da40..e8e8eb0 100644
    bool firstMessage = true;
    int y = m_PaddedH - 1;
    for (auto it = std::next(messageVec.begin(), messageOffset); it != messageVec.end(); ++it)
-@@ -101,24 +185,16 @@ void UiHistoryView::Draw()
+@@ -101,24 +186,16 @@ void UiHistoryView::Draw()
      }
  
      ChatMessage& msg = msgIt->second;
@@ -5658,7 +5659,7 @@ index ef9da40..e8e8eb0 100644
      }();
  
      std::vector<std::wstring> wlines;
-@@ -131,16 +207,19 @@ void UiHistoryView::Draw()
+@@ -131,16 +208,19 @@ void UiHistoryView::Draw()
          text = StrUtil::Textize(text);
        }
  
@@ -5679,7 +5680,7 @@ index ef9da40..e8e8eb0 100644
          if (!quotedIt->second.text.empty())
          {
            quotedText = StrUtil::Split(quotedIt->second.text, '\n').at(0);
-@@ -161,17 +240,25 @@ void UiHistoryView::Draw()
+@@ -161,17 +241,25 @@ void UiHistoryView::Draw()
          quotedText = "";
        }
  
@@ -5711,7 +5712,7 @@ index ef9da40..e8e8eb0 100644
      if (!msg.fileInfo.empty())
      {
        FileInfo fileInfo = ProtocolUtil::FileInfoFromHex(msg.fileInfo);
-@@ -181,10 +268,24 @@ void UiHistoryView::Draw()
+@@ -181,10 +269,24 @@ void UiHistoryView::Draw()
          (AppConfig::GetNum("attachment_prefetch") == AttachmentPrefetchAll);
        static const bool isAttachmentPrefetchSelected =
          (AppConfig::GetNum("attachment_prefetch") == AttachmentPrefetchSelected);
@@ -5737,7 +5738,7 @@ index ef9da40..e8e8eb0 100644
            m_Model->DownloadAttachmentLocked(currentChat.first, currentChat.second, *it,
                                              fileInfo.fileId, DownloadFileActionNone);
            fileInfo = ProtocolUtil::FileInfoFromHex(msg.fileInfo);
-@@ -221,7 +322,57 @@ void UiHistoryView::Draw()
+@@ -221,7 +323,57 @@ void UiHistoryView::Draw()
        }
  
        std::wstring fileStr = attachmentIndicator + StrUtil::ToWString(fileName + fileStatus);
@@ -5796,7 +5797,7 @@ index ef9da40..e8e8eb0 100644
      }
  
      // Reactions
-@@ -289,7 +440,7 @@ void UiHistoryView::Draw()
+@@ -289,7 +441,7 @@ void UiHistoryView::Draw()
              reactionsText = StrUtil::Textize(reactionsText);
            }
  
@@ -5805,7 +5806,7 @@ index ef9da40..e8e8eb0 100644
            std::wstring reactions = StrUtil::ToWString(reactionsText);
            if (StrUtil::WStringWidth(reactions) > maxReactionsLen)
            {
-@@ -306,7 +457,7 @@ void UiHistoryView::Draw()
+@@ -306,7 +458,7 @@ void UiHistoryView::Draw()
        }
      }
  
@@ -5814,7 +5815,7 @@ index ef9da40..e8e8eb0 100644
      if (firstMessage && ((int)wlines.size() > maxMessageLines))
      {
        wlines.resize(maxMessageLines - 1);
-@@ -314,39 +465,154 @@ void UiHistoryView::Draw()
+@@ -314,39 +466,154 @@ void UiHistoryView::Draw()
        reactionLines = 0;
      }
  
@@ -5864,7 +5865,7 @@ index ef9da40..e8e8eb0 100644
 +    {
 +      drawEdge(y, false);
 +      yBottomEdge = y;
-+      if (useCornerImages)
++      if (useCornerImages && (y - 1 >= 0)) // the row above must exist too, else the image would leave the pane
 +      {
 +        // bottom corners span the last text row and the bottom edge row
 +        corners.push_back({ paddedBegX + bx, paddedBegY + y - 1, 2, cornerIdx });
@@ -5981,7 +5982,7 @@ index ef9da40..e8e8eb0 100644
        }
        else if (isReaction)
        {
-@@ -360,8 +626,54 @@ void UiHistoryView::Draw()
+@@ -360,8 +627,54 @@ void UiHistoryView::Draw()
        if (--y < 0) break;
      }
  
@@ -6024,7 +6025,7 @@ index ef9da40..e8e8eb0 100644
 +      }
 +    }
 +
-+    if (useCornerImages)
++    if (useCornerImages && (y + 1 < m_PaddedH))
 +    {
 +      // top corners span the top edge row and the first text row
 +      corners.push_back({ paddedBegX + bx, paddedBegY + y, 0, cornerIdx });
@@ -6036,7 +6037,7 @@ index ef9da40..e8e8eb0 100644
      int attributeName = isSelectedMessage ? attributeNameSelected : attributeNameNormal;
      int colorPairName = [&]()
      {
-@@ -398,7 +710,12 @@ void UiHistoryView::Draw()
+@@ -398,7 +711,12 @@ void UiHistoryView::Draw()
      {
        if (msg.timeSent != std::numeric_limits<int64_t>::max())
        {
@@ -6050,7 +6051,7 @@ index ef9da40..e8e8eb0 100644
        }
      }
  
-@@ -419,14 +736,76 @@ void UiHistoryView::Draw()
+@@ -419,14 +737,76 @@ void UiHistoryView::Draw()
          L" user " + StrUtil::ToWString(msg.senderId);
      }
  
@@ -6130,10 +6131,16 @@ index ef9da40..e8e8eb0 100644
  
      if (--y < 0) break;
  
-@@ -434,6 +813,19 @@ void UiHistoryView::Draw()
+@@ -434,6 +814,25 @@ void UiHistoryView::Draw()
    }
  
    wrefresh(m_PaddedWin);
++  corners.erase(std::remove_if(corners.begin(), corners.end(), [&](const UiImage::Corner& c)
++  {
++    const int span = (c.shape >= 4) ? 1 : 2;
++    return (c.row < paddedBegY) || (c.row + span - 1 > paddedBegY + m_PaddedH - 1) || (c.col < paddedBegX) ||
++      (c.col + span - 1 > paddedBegX + m_PaddedW - 1);
++  }), corners.end());
 +  UiImage::ShowAll(placements, corners);
 +  m_Model->SetHistoryHitsLocked(hits);
 +
