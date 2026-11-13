@@ -103,17 +103,26 @@ case "$mime" in
   image/*) show "$f" "" ;;
   video/*)
     if command -v ffmpeg >/dev/null 2>&1; then
-      # play it looping in the terminal (first 30 s, silent) as an animated GIF; o = open in the system player
+      # still frame at once, then the looping GIF (first 10 s, silent) replaces it when ready; o = system player
+      still="$(mktemp --suffix=.png)"; tmp="$(mktemp --suffix=.gif)"
+      ffmpeg -loglevel quiet -y -i "$f" -frames:v 1 -vf "scale='min(640,iw)':-2" "$still" </dev/null
       clear
-      printf '\n  preparing preview of %s ...' "$(basename "$f")"
-      tmp="$(mktemp --suffix=.gif)"
-      if ffmpeg -loglevel quiet -y -t 30 -i "$f" \
-        -vf "fps=15,scale='min(640,iw)':-1:flags=lanczos,split[s0][s1];[s0]palettegen[p];[s1][p]paletteuse" \
-        "$tmp" </dev/null; then
-        show "$tmp" " · o = open in player"
-      else
-        xdg-open "$f" >/dev/null 2>&1 &
-      fi
+      "$kitten" icat --clear --align=center "$still"
+      printf '\n  %s  -  animating ...  any key to close · o = open in player' "$(basename "$f")"
+      ffmpeg -loglevel quiet -y -t 10 -i "$f" -an -f gif \
+        -vf "fps=12,scale='min(480,iw)':-2:flags=bilinear,split[a][b];[a]palettegen=max_colors=128[p];[b][p]paletteuse" \
+        "$tmp" </dev/null &
+      fpid=$!
+      key=""
+      while kill -0 "$fpid" 2>/dev/null; do
+        if IFS= read -rsn1 -t 0.1 key; then
+          kill "$fpid" 2>/dev/null
+          [ "$key" = "o" ] || [ "$key" = "O" ] && xdg-open "$f" >/dev/null 2>&1 &
+          rm -f "$still"; exit 0
+        fi
+      done
+      rm -f "$still"
+      show "$tmp" " · o = open in player"
     else
       xdg-open "$f" >/dev/null 2>&1 &
     fi
