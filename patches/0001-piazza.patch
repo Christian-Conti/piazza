@@ -4561,7 +4561,7 @@ index 32e8e82..1ad28f3 100644
      return helpItems;
    }();
 diff --git a/src/uihistoryview.cpp b/src/uihistoryview.cpp
-index ef9da40..745eeb6 100644
+index ef9da40..15817b3 100644
 --- a/src/uihistoryview.cpp
 +++ b/src/uihistoryview.cpp
 @@ -7,6 +7,8 @@
@@ -4638,10 +4638,24 @@ index ef9da40..745eeb6 100644
    static int colorPairNameRecv = UiColorConfig::GetColorPair("history_name_recv_color");
    static int attributeNameNormal = UiColorConfig::GetAttribute("history_name_attr");
    static int attributeNameSelected = UiColorConfig::GetAttribute("history_name_attr_selected");
-@@ -73,6 +100,11 @@ void UiHistoryView::Draw()
+@@ -73,6 +100,25 @@ void UiHistoryView::Draw()
    static std::wstring quoteIndicator = L"> ";
  
    std::pair<std::string, std::string>& currentChat = m_Model->GetCurrentChatLocked();
++  if (currentChat.first.empty())
++  {
++    // nothing open yet: a hint instead of an empty pane
++    static int paneAttr = UiColorConfig::GetAttribute("history_text_attr");
++    static int panePair = UiColorConfig::GetColorPair("history_color");
++    werase(m_PaddedWin);
++    wbkgd(m_PaddedWin, paneAttr | panePair | ' ');
++    const std::wstring hint = L"\u2190 choose a chat  (\u2191 \u2193 to browse, Tab to switch service)";
++    mvwaddnwstr(m_PaddedWin, m_PaddedH / 2, std::max(0, (m_PaddedW - StrUtil::WStringWidth(hint)) / 2), hint.c_str(),
++                std::min((int)hint.size(), m_PaddedW));
++    wrefresh(m_PaddedWin);
++    return;
++  }
++
 +  const KindPairs& kind = kindPairs.at(std::min(std::max(m_Model->GetProfileKindLocked(currentChat.first), 0), kKinds - 1));
 +  const int colorPairTextSent = kind.textSent;
 +  const int colorPairTextRecv = kind.textRecv;
@@ -4650,7 +4664,7 @@ index ef9da40..745eeb6 100644
    const bool emojiEnabled = m_Model->GetEmojiEnabledLocked();
    static const bool developerMode = AppUtil::GetDeveloperMode();
  
-@@ -83,10 +115,22 @@ void UiHistoryView::Draw()
+@@ -83,10 +129,22 @@ void UiHistoryView::Draw()
    int messageOffset = std::max(m_Model->GetMessageOffsetLocked(currentChat.first, currentChat.second), 0);
  
    werase(m_PaddedWin);
@@ -4674,7 +4688,7 @@ index ef9da40..745eeb6 100644
    bool firstMessage = true;
    int y = m_PaddedH - 1;
    for (auto it = std::next(messageVec.begin(), messageOffset); it != messageVec.end(); ++it)
-@@ -105,20 +149,9 @@ void UiHistoryView::Draw()
+@@ -105,20 +163,9 @@ void UiHistoryView::Draw()
      int attributeText = isSelectedMessage ? attributeTextSelected : attributeTextNormal;
      int colorPairText = [&]()
      {
@@ -4698,7 +4712,7 @@ index ef9da40..745eeb6 100644
      }();
  
      std::vector<std::wstring> wlines;
-@@ -131,16 +164,19 @@ void UiHistoryView::Draw()
+@@ -131,16 +178,19 @@ void UiHistoryView::Draw()
          text = StrUtil::Textize(text);
        }
  
@@ -4719,7 +4733,7 @@ index ef9da40..745eeb6 100644
          if (!quotedIt->second.text.empty())
          {
            quotedText = StrUtil::Split(quotedIt->second.text, '\n').at(0);
-@@ -161,17 +197,22 @@ void UiHistoryView::Draw()
+@@ -161,17 +211,22 @@ void UiHistoryView::Draw()
          quotedText = "";
        }
  
@@ -4748,7 +4762,7 @@ index ef9da40..745eeb6 100644
      if (!msg.fileInfo.empty())
      {
        FileInfo fileInfo = ProtocolUtil::FileInfoFromHex(msg.fileInfo);
-@@ -181,10 +222,22 @@ void UiHistoryView::Draw()
+@@ -181,10 +236,22 @@ void UiHistoryView::Draw()
          (AppConfig::GetNum("attachment_prefetch") == AttachmentPrefetchAll);
        static const bool isAttachmentPrefetchSelected =
          (AppConfig::GetNum("attachment_prefetch") == AttachmentPrefetchSelected);
@@ -4772,7 +4786,7 @@ index ef9da40..745eeb6 100644
            m_Model->DownloadAttachmentLocked(currentChat.first, currentChat.second, *it,
                                              fileInfo.fileId, DownloadFileActionNone);
            fileInfo = ProtocolUtil::FileInfoFromHex(msg.fileInfo);
-@@ -222,6 +275,20 @@ void UiHistoryView::Draw()
+@@ -222,6 +289,20 @@ void UiHistoryView::Draw()
  
        std::wstring fileStr = attachmentIndicator + StrUtil::ToWString(fileName + fileStatus);
        wlines.insert(wlines.begin(), fileStr);
@@ -4793,7 +4807,7 @@ index ef9da40..745eeb6 100644
      }
  
      // Reactions
-@@ -289,7 +356,7 @@ void UiHistoryView::Draw()
+@@ -289,7 +370,7 @@ void UiHistoryView::Draw()
              reactionsText = StrUtil::Textize(reactionsText);
            }
  
@@ -4802,7 +4816,7 @@ index ef9da40..745eeb6 100644
            std::wstring reactions = StrUtil::ToWString(reactionsText);
            if (StrUtil::WStringWidth(reactions) > maxReactionsLen)
            {
-@@ -306,7 +373,7 @@ void UiHistoryView::Draw()
+@@ -306,7 +387,7 @@ void UiHistoryView::Draw()
        }
      }
  
@@ -4811,7 +4825,7 @@ index ef9da40..745eeb6 100644
      if (firstMessage && ((int)wlines.size() > maxMessageLines))
      {
        wlines.resize(maxMessageLines - 1);
-@@ -314,8 +381,38 @@ void UiHistoryView::Draw()
+@@ -314,8 +395,38 @@ void UiHistoryView::Draw()
        reactionLines = 0;
      }
  
@@ -4850,7 +4864,7 @@ index ef9da40..745eeb6 100644
        bool isAttachment = (wline->rfind(attachmentIndicator, 0) == 0);
        bool isQuote = (wline->rfind(quoteIndicator, 0) == 0);
        bool isReaction = (reactionLines == 1) && (std::distance(wline, wlines.rbegin()) == 0);
-@@ -324,29 +421,33 @@ void UiHistoryView::Draw()
+@@ -324,29 +435,33 @@ void UiHistoryView::Draw()
        {
          wattron(m_PaddedWin, attributeText | colorPairTextAttachment);
        }
@@ -4895,7 +4909,7 @@ index ef9da40..745eeb6 100644
        }
        else if (isReaction)
        {
-@@ -362,6 +463,9 @@ void UiHistoryView::Draw()
+@@ -362,6 +477,9 @@ void UiHistoryView::Draw()
  
      if (y < 0) break;
  
@@ -4905,7 +4919,7 @@ index ef9da40..745eeb6 100644
      int attributeName = isSelectedMessage ? attributeNameSelected : attributeNameNormal;
      int colorPairName = [&]()
      {
-@@ -419,8 +523,10 @@ void UiHistoryView::Draw()
+@@ -419,8 +537,10 @@ void UiHistoryView::Draw()
          L" user " + StrUtil::ToWString(msg.senderId);
      }
  
@@ -4918,7 +4932,7 @@ index ef9da40..745eeb6 100644
  
      wattroff(m_PaddedWin, attributeName | colorPairName);
  
-@@ -434,6 +540,7 @@ void UiHistoryView::Draw()
+@@ -434,6 +554,7 @@ void UiHistoryView::Draw()
    }
  
    wrefresh(m_PaddedWin);
@@ -5306,7 +5320,7 @@ index b89cc9b..b33bc97 100644
  
    void UpdateFooter();
 diff --git a/src/uilistview.cpp b/src/uilistview.cpp
-index e3a9160..2f144c6 100644
+index e3a9160..442b42d 100644
 --- a/src/uilistview.cpp
 +++ b/src/uilistview.cpp
 @@ -17,11 +17,12 @@ UiListView::UiListView(const UiViewParams& p_Params)
@@ -5344,7 +5358,8 @@ index e3a9160..2f144c6 100644
 +  static int selectedColor = UiColorConfig::GetColorPair("list_selected_color");
 +  static int selectedDimColor = UiColorConfig::GetColorPair("list_selected_dim_color");
  
-   int index = std::max(0, m_Model->GetCurrentChatIndexLocked());
+-  int index = std::max(0, m_Model->GetCurrentChatIndexLocked());
++  int index = m_Model->GetCurrentChatIndexLocked(); // -1: nothing open, no row highlighted
    const std::vector<std::pair<std::string, std::string>>& p_ChatVec = m_Model->GetChatVecLocked();
  
    const bool emojiEnabled = m_Model->GetEmojiEnabledLocked();
@@ -5470,7 +5485,7 @@ index f5af738..2087136 100644
      m_Result = false;
      m_Running = false;
 diff --git a/src/uimodel.cpp b/src/uimodel.cpp
-index d40b779..309266d 100644
+index d40b779..cca4783 100644
 --- a/src/uimodel.cpp
 +++ b/src/uimodel.cpp
 @@ -8,6 +8,7 @@
@@ -5490,7 +5505,7 @@ index d40b779..309266d 100644
  #include "clipboard.h"
  #include "composescript.h"
  #include "fileutil.h"
-@@ -171,11 +174,30 @@ void UiModel::Impl::OnKeySendMsg()
+@@ -171,17 +174,37 @@ void UiModel::Impl::OnKeySendMsg()
    if (editMessageActive)
    {
      SaveEditMessage();
@@ -5523,7 +5538,14 @@ index d40b779..309266d 100644
  }
  
  void UiModel::Impl::SendMessage()
-@@ -193,10 +215,11 @@ void UiModel::Impl::SendMessage()
+ {
+   std::string profileId = m_CurrentChat.first;
+   std::string chatId = m_CurrentChat.second;
++  if (profileId.empty() || chatId.empty()) return; // no chat open
+   std::wstring& entryStr = m_EntryStr[profileId][chatId];
+   int& entryPos = m_EntryPos[profileId][chatId];
+ 
+@@ -193,10 +216,11 @@ void UiModel::Impl::SendMessage()
    sendMessageRequest->chatMessage.mentions = ParseMentions(profileId, chatId,
                                                             sendMessageRequest->chatMessage.text);
  
@@ -5536,7 +5558,7 @@ index d40b779..309266d 100644
    }
  
    SendProtocolRequest(profileId, sendMessageRequest);
-@@ -247,6 +270,49 @@ void UiModel::Impl::EntryKeyHandler(wint_t p_Key)
+@@ -247,6 +271,49 @@ void UiModel::Impl::EntryKeyHandler(wint_t p_Key)
    const int messageCount = m_Messages[profileId][chatId].size();
    int& messageOffset = m_MessageOffset[profileId][chatId];
  
@@ -5586,7 +5608,7 @@ index d40b779..309266d 100644
    if (p_Key == keyUp)
    {
      if (GetSelectMessageActive() && !GetEditMessageActive())
-@@ -545,6 +611,165 @@ void UiModel::Impl::SetTyping(const std::string& p_ProfileId, const std::string&
+@@ -545,6 +612,166 @@ void UiModel::Impl::SetTyping(const std::string& p_ProfileId, const std::string&
    }
  }
  
@@ -5699,9 +5721,10 @@ index d40b779..309266d 100644
 +int UiModel::Impl::StepChatInTab(int p_Dir)
 +{
 +  const int n = (int)m_ChatVec.size();
++  const int start = (m_CurrentChatIndex >= 0) ? m_CurrentChatIndex : ((p_Dir > 0) ? -1 : n); // nothing open yet
 +  for (int step = 1; step <= n; ++step)
 +  {
-+    int i = ((m_CurrentChatIndex + p_Dir * step) % n + n) % n;
++    int i = ((start + p_Dir * step) % n + n) % n;
 +    if (InActiveTab(m_ChatVec.at(i).first)) return i;
 +  }
 +
@@ -5752,7 +5775,7 @@ index d40b779..309266d 100644
  void UiModel::Impl::OnKeyNextChat()
  {
    AnyUserKeyInput();
-@@ -553,12 +778,10 @@ void UiModel::Impl::OnKeyNextChat()
+@@ -553,12 +780,10 @@ void UiModel::Impl::OnKeyNextChat()
  
    if (m_ChatVec.empty()) return;
  
@@ -5768,7 +5791,7 @@ index d40b779..309266d 100644
    m_CurrentChat = m_ChatVec.at(m_CurrentChatIndex);
    OnCurrentChatChanged();
    SetSelectMessageActive(false);
-@@ -572,12 +795,10 @@ void UiModel::Impl::OnKeyPrevChat()
+@@ -572,12 +797,10 @@ void UiModel::Impl::OnKeyPrevChat()
  
    if (m_ChatVec.empty()) return;
  
@@ -5784,7 +5807,7 @@ index d40b779..309266d 100644
    m_CurrentChat = m_ChatVec.at(m_CurrentChatIndex);
    OnCurrentChatChanged();
    SetSelectMessageActive(false);
-@@ -598,7 +819,7 @@ void UiModel::Impl::OnKeyUnreadChat()
+@@ -598,7 +821,7 @@ void UiModel::Impl::OnKeyUnreadChat()
    {
      const std::pair<std::string, std::string>& chat = m_ChatVec.at(i);
      const bool isUnread = GetChatIsUnread(chat.first, chat.second);
@@ -5793,7 +5816,7 @@ index d40b779..309266d 100644
      {
        unreadVec.push_back(i);
        if (m_CurrentChatIndex == (int)i)
-@@ -1372,13 +1593,14 @@ void UiModel::Impl::TransferFile(const std::vector<std::string>& p_FilePaths)
+@@ -1372,13 +1595,14 @@ void UiModel::Impl::TransferFile(const std::vector<std::string>& p_FilePaths)
          }
        }
  
@@ -5809,24 +5832,21 @@ index d40b779..309266d 100644
          }
        }
  
-@@ -2499,8 +2721,14 @@ void UiModel::Impl::SortChats()
+@@ -2497,12 +2721,7 @@ void UiModel::Impl::SortChats()
+ 
+   if (!m_ChatVec.empty())
    {
-     if (m_CurrentChatIndex == -1)
-     {
+-    if (m_CurrentChatIndex == -1)
+-    {
 -      m_CurrentChat = m_ChatVec.at(0);
 -      OnCurrentChatChanged();
-+      // start on the newest chat of the visible tab, not on whatever service happened to sync first
-+      const int first = FirstChatInTab();
-+      if (first >= 0)
-+      {
-+        m_CurrentChatIndex = first;
-+        m_CurrentChat = m_ChatVec.at(first);
-+        OnCurrentChatChanged();
-+      }
-     }
-     else
+-    }
+-    else
++    if (m_CurrentChatIndex != -1)
      {
-@@ -2615,6 +2843,8 @@ void UiModel::Impl::UpdateChatInfoIsUnread(const std::string& p_ProfileId, const
+       for (size_t i = 0; i < m_ChatVec.size(); ++i)
+       {
+@@ -2615,6 +2834,8 @@ void UiModel::Impl::UpdateChatInfoIsUnread(const std::string& p_ProfileId, const
              m_TriggerTerminalBell = true;
            }
  
@@ -5835,19 +5855,26 @@ index d40b779..309266d 100644
            bool desktopNotify = false;
            if (m_TerminalActive)
            {
-@@ -3262,7 +3492,10 @@ bool UiModel::Impl::SetCurrentChatIndexIfNotSet()
+@@ -3258,15 +3479,11 @@ bool UiModel::Impl::IsCurrentChatSet()
+   return (m_CurrentChatIndex >= 0);
+ }
+ 
++// Chats are only opened by the user (arrows, Tab, goto). Auto-opening whichever service synced first meant
++// landing on Telegram "Saved Messages" at every start.
+ bool UiModel::Impl::SetCurrentChatIndexIfNotSet()
  {
-   if ((m_CurrentChatIndex >= 0) || (m_ChatVec.empty())) return false;
- 
+-  if ((m_CurrentChatIndex >= 0) || (m_ChatVec.empty())) return false;
+-
 -  m_CurrentChatIndex = 0;
-+  const int first = FirstChatInTab();
-+  if (first < 0) return false;
-+
-+  m_CurrentChatIndex = first;
-   m_CurrentChat = m_ChatVec.at(m_CurrentChatIndex);
+-  m_CurrentChat = m_ChatVec.at(m_CurrentChatIndex);
+-
+-  UpdateHistory();
+-  return true;
++  return false;
+ }
  
-   UpdateHistory();
-@@ -3293,6 +3526,36 @@ void UiModel::Impl::SetTerminalActive(bool p_TerminalActive)
+ void UiModel::Impl::SetTerminalActive(bool p_TerminalActive)
+@@ -3293,6 +3510,36 @@ void UiModel::Impl::SetTerminalActive(bool p_TerminalActive)
    }
  }
  
@@ -5884,7 +5911,7 @@ index d40b779..309266d 100644
  void UiModel::Impl::DesktopNotify(const std::string& p_Name, const std::string& p_Text)
  {
    static const bool desktopNotifyEnabled = UiConfig::GetBool("desktop_notify_enabled");
-@@ -3723,6 +3986,114 @@ void UiModel::Impl::SaveEditMessage()
+@@ -3723,6 +3970,114 @@ void UiModel::Impl::SaveEditMessage()
    Clear(false /*p_AllowUndo*/);
  }
  
@@ -5999,7 +6026,7 @@ index d40b779..309266d 100644
  void UiModel::Impl::OnKeyCancel()
  {
    AnyUserKeyInput();
-@@ -3733,6 +4104,8 @@ void UiModel::Impl::OnKeyCancel()
+@@ -3733,6 +4088,8 @@ void UiModel::Impl::OnKeyCancel()
      SetEditMessageActive(false);
    }
  
@@ -6008,7 +6035,7 @@ index d40b779..309266d 100644
    Clear(allowUndo);
  }
  
-@@ -4385,14 +4758,24 @@ void UiModel::Impl::AddQuoteFromSelectedMessage(ChatMessage& p_ChatMessage)
+@@ -4385,14 +4742,24 @@ void UiModel::Impl::AddQuoteFromSelectedMessage(ChatMessage& p_ChatMessage)
    const int messageOffset = m_MessageOffset[profileId][chatId];
    const std::unordered_map<std::string, ChatMessage>& messages = m_Messages[profileId][chatId];
  
@@ -6038,7 +6065,7 @@ index d40b779..309266d 100644
    if (msg == messages.end())
    {
      LOG_WARNING("error finding selected message content");
-@@ -4571,6 +4954,16 @@ void UiModel::KeyHandler(wint_t p_Key)
+@@ -4571,6 +4938,16 @@ void UiModel::KeyHandler(wint_t p_Key)
    static wint_t keyHome = UiKeyConfig::GetKey("home");
  
    static wint_t keySendMsg = UiKeyConfig::GetKey("send_msg");
@@ -6055,7 +6082,7 @@ index d40b779..309266d 100644
    static wint_t keyNextChat = UiKeyConfig::GetKey("next_chat");
    static wint_t keyPrevChat = UiKeyConfig::GetKey("prev_chat");
    static wint_t keyUnreadChat = UiKeyConfig::GetKey("unread_chat");
-@@ -4660,6 +5053,26 @@ void UiModel::KeyHandler(wint_t p_Key)
+@@ -4660,6 +5037,26 @@ void UiModel::KeyHandler(wint_t p_Key)
      std::unique_lock<owned_mutex> lock(m_ModelMutex);
      GetImpl().OnKeyToggleEmoji();
    }
@@ -6082,7 +6109,7 @@ index d40b779..309266d 100644
    else if (p_Key == keyNextChat)
    {
      std::unique_lock<owned_mutex> lock(m_ModelMutex);
-@@ -4796,8 +5209,15 @@ void UiModel::KeyHandler(wint_t p_Key)
+@@ -4796,8 +5193,15 @@ void UiModel::KeyHandler(wint_t p_Key)
    }
    else if (p_Key == keyCancel)
    {
@@ -6100,7 +6127,7 @@ index d40b779..309266d 100644
    }
    else if (p_Key == keyDecreaseListWidth)
    {
-@@ -5055,6 +5475,60 @@ std::string UiModel::GetContactPhoneLocked(const std::string& p_ProfileId, const
+@@ -5055,6 +5459,60 @@ std::string UiModel::GetContactPhoneLocked(const std::string& p_ProfileId, const
    return GetImpl().GetContactPhone(p_ProfileId, p_ChatId);
  }
  
@@ -6161,7 +6188,7 @@ index d40b779..309266d 100644
  int UiModel::GetCurrentChatIndexLocked()
  {
    nc_assert(m_ModelMutex.owns_lock());
-@@ -5265,7 +5739,9 @@ std::vector<std::string> UiModel::SelectFile()
+@@ -5265,7 +5723,9 @@ std::vector<std::string> UiModel::SelectFile()
      static const bool filePickerPersistDir = UiConfig::GetBool("file_picker_persist_dir");
      if (!filePickerPersistDir || currentDir.empty())
      {
@@ -6172,7 +6199,7 @@ index d40b779..309266d 100644
      }
  
      UiDialogParams params(this, "Send File", 0.75, 0.65);
-@@ -5760,7 +6236,24 @@ void UiModel::OnKeyCopy()
+@@ -5760,7 +6220,24 @@ void UiModel::OnKeyCopy()
  
  void UiModel::OnKeyPaste()
  {
@@ -6198,7 +6225,7 @@ index d40b779..309266d 100644
    {
      // Open modal dialog without model mutex held
      static const bool confirmSendPastedImage = UiConfig::GetBool("confirm_send_pasted_image");
-@@ -5774,8 +6267,9 @@ void UiModel::OnKeyPaste()
+@@ -5774,8 +6251,9 @@ void UiModel::OnKeyPaste()
  
      static int index = 0;
      ++index;
@@ -6211,7 +6238,7 @@ index d40b779..309266d 100644
        MessageDialog("Warning", "Failed getting clipboard image.", 0.7, 5);
        return;
 diff --git a/src/uimodel.h b/src/uimodel.h
-index 4782732..55e5a87 100644
+index 4782732..97d3d4a 100644
 --- a/src/uimodel.h
 +++ b/src/uimodel.h
 @@ -7,6 +7,7 @@
@@ -6270,7 +6297,7 @@ index 4782732..55e5a87 100644
  
      std::pair<std::string, std::string> m_CurrentChat;
      int m_CurrentChatIndex = -1;
-+    bool m_FocusList = false; // arrow-key focus: contact list (true) vs entry/messages (false)
++    bool m_FocusList = true; // arrow-key focus: contact list (true) vs entry/messages (false)
 +    std::string m_ReplyMsgId; // message fixed as quote target by the reply key
 +    std::pair<std::string, std::string> m_ReplyChat;
 +    std::vector<std::string> m_Tabs; // protocol names, fixed priority order
