@@ -14,7 +14,7 @@ index dd01aef..db072b3 100644
    src/uilistborderview.h
    src/uilistdialog.cpp
 diff --git a/lib/duchat/src/duchat.cpp b/lib/duchat/src/duchat.cpp
-index c0de985..836b921 100644
+index c0de985..a390676 100644
 --- a/lib/duchat/src/duchat.cpp
 +++ b/lib/duchat/src/duchat.cpp
 @@ -7,6 +7,10 @@
@@ -28,10 +28,24 @@ index c0de985..836b921 100644
  #include <algorithm>
  #include <iostream>
  #include <map>
-@@ -373,6 +377,26 @@ void DuChat::PerformRequest(std::shared_ptr<RequestMessage> p_RequestMessage)
+@@ -373,6 +377,40 @@ void DuChat::PerformRequest(std::shared_ptr<RequestMessage> p_RequestMessage)
              t = t - 100;
              s_Messages[s_GroupId].push_back(chatMessage);
            }
++
++          // test aid: DUMMY_QUOTE=1 adds a reply that quotes the newest message
++          if (getenv("DUMMY_QUOTE") != nullptr)
++          {
++            ChatMessage reply;
++            reply.id = "Jim_0_quote_test";
++            reply.senderId = "Jim_0";
++            reply.text = "Quoted reply";
++            reply.quotedId = s_Messages[s_GroupId].front().id;
++            reply.timeSent = ((int64_t)(1237962000 + 2000) * 1000);
++            reply.isOutgoing = false;
++            reply.isRead = true;
++            s_Messages[s_GroupId].insert(s_Messages[s_GroupId].begin(), reply);
++          }
 +
 +          // test aid: DUMMY_ATTACHMENT=/path/to/file adds a received message carrying that file (e.g. an audio clip)
 +          const char* attachment = getenv("DUMMY_ATTACHMENT");
@@ -55,7 +69,7 @@ index c0de985..836b921 100644
          }
  
          m_MessageHandler(newChatsNotify);
-@@ -403,6 +427,7 @@ void DuChat::PerformRequest(std::shared_ptr<RequestMessage> p_RequestMessage)
+@@ -403,6 +441,7 @@ void DuChat::PerformRequest(std::shared_ptr<RequestMessage> p_RequestMessage)
          std::shared_ptr<SendMessageNotify> sendMessageNotify =
            std::make_shared<SendMessageNotify>(m_ProfileId);
          sendMessageNotify->success = true;
@@ -5393,7 +5407,7 @@ index 32e8e82..5652628 100644
  
    werase(m_Win);
 diff --git a/src/uihistoryview.cpp b/src/uihistoryview.cpp
-index ef9da40..55fc38f 100644
+index ef9da40..b987a36 100644
 --- a/src/uihistoryview.cpp
 +++ b/src/uihistoryview.cpp
 @@ -7,6 +7,11 @@
@@ -5716,7 +5730,7 @@ index ef9da40..55fc38f 100644
      if (firstMessage && ((int)wlines.size() > maxMessageLines))
      {
        wlines.resize(maxMessageLines - 1);
-@@ -314,39 +445,117 @@ void UiHistoryView::Draw()
+@@ -314,39 +445,135 @@ void UiHistoryView::Draw()
        reactionLines = 0;
      }
  
@@ -5747,6 +5761,21 @@ index ef9da40..55fc38f 100644
 +    };
 +
 +    const bool useCornerImages = roundImages && (cornerIdx >= 0) && (cornerIdx < 16);
++
++    // quote card: first/last quote row, for the inverse corner images
++    int quoteFirstIdx = -1;
++    int quoteLastIdx = -1;
++    for (int qi = 0; qi < (int)wlines.size(); ++qi)
++    {
++      if (wlines[qi].rfind(quoteIndicator, 0) == 0)
++      {
++        if (quoteFirstIdx < 0) quoteFirstIdx = qi;
++        quoteLastIdx = qi;
++      }
++    }
++
++    int quoteFirstY = -1;
++    int quoteLastY = -1;
 +    if (y >= 0)
 +    {
 +      drawEdge(y, false);
@@ -5775,6 +5804,9 @@ index ef9da40..55fc38f 100644
 +        placement.rows = imgRows;
 +        placements.push_back(placement);
 +      }
++
++      if (lineIdx == quoteFirstIdx) quoteFirstY = y;
++      if (lineIdx == quoteLastIdx) quoteLastY = y;
 +
        bool isAttachment = (wline->rfind(attachmentIndicator, 0) == 0);
        bool isQuote = (wline->rfind(quoteIndicator, 0) == 0);
@@ -5816,11 +5848,13 @@ index ef9da40..55fc38f 100644
 +        wattron(m_PaddedWin, quoteAttr | (msg.isOutgoing ? kind.quoteSent : kind.quoteRecv));
 +        mvwaddnwstr(m_PaddedWin, y, bx + 2, inset.c_str(), std::min((int)inset.size(), bubbleW - 4));
 +        wattroff(m_PaddedWin, quoteAttr | (msg.isOutgoing ? kind.quoteSent : kind.quoteRecv));
-+      }
+       }
+-      else if (isQuote)
 +
 +      const bool isCornerRow = useCornerImages && ((lineIdx == 0) || (lineIdx == (int)wlines.size() - 1));
 +      if (isCornerRow)
-+      {
+       {
+-        wattroff(m_PaddedWin, attributeText | colorPairTextQuoted);
 +        // the corner image paints these cells, so they must be transparent underneath
 +        wattron(m_PaddedWin, colorPairPane);
 +        mvwaddnwstr(m_PaddedWin, y, bx, L"  ", 2);
@@ -5836,18 +5870,29 @@ index ef9da40..55fc38f 100644
 +        mvwaddnwstr(m_PaddedWin, y, bx, L"\u2590", 1);
 +        mvwaddnwstr(m_PaddedWin, y, bx + bubbleW - 1, L"\u258c", 1);
 +        wattroff(m_PaddedWin, sidePair);
-       }
--      else if (isQuote)
++      }
 +
 +      if (isAttachment)
-       {
--        wattroff(m_PaddedWin, attributeText | colorPairTextQuoted);
++      {
 +        wattroff(m_PaddedWin, attributeText | colorPairTextAttachment);
        }
        else if (isReaction)
        {
-@@ -362,6 +571,17 @@ void UiHistoryView::Draw()
+@@ -360,8 +587,30 @@ void UiHistoryView::Draw()
+       if (--y < 0) break;
+     }
  
++    if (useCornerImages && (quoteFirstY >= 0) && (quoteLastY >= 0))
++    {
++      // round the dark quote card: the card spans columns bx+2 .. bx+bubbleW-3
++      const int cardL = paddedBegX + bx + 2;
++      const int cardR = paddedBegX + bx + bubbleW - 3;
++      corners.push_back({ cardL, paddedBegY + quoteFirstY, 4, cornerIdx });
++      corners.push_back({ cardR, paddedBegY + quoteFirstY, 5, cornerIdx });
++      corners.push_back({ cardL, paddedBegY + quoteLastY, 6, cornerIdx });
++      corners.push_back({ cardR, paddedBegY + quoteLastY, 7, cornerIdx });
++    }
++
      if (y < 0) break;
  
 +    drawEdge(y, true);
@@ -5864,7 +5909,7 @@ index ef9da40..55fc38f 100644
      int attributeName = isSelectedMessage ? attributeNameSelected : attributeNameNormal;
      int colorPairName = [&]()
      {
-@@ -398,7 +618,12 @@ void UiHistoryView::Draw()
+@@ -398,7 +647,12 @@ void UiHistoryView::Draw()
      {
        if (msg.timeSent != std::numeric_limits<int64_t>::max())
        {
@@ -5878,7 +5923,7 @@ index ef9da40..55fc38f 100644
        }
      }
  
-@@ -419,14 +644,76 @@ void UiHistoryView::Draw()
+@@ -419,14 +673,76 @@ void UiHistoryView::Draw()
          L" user " + StrUtil::ToWString(msg.senderId);
      }
  
@@ -5958,7 +6003,7 @@ index ef9da40..55fc38f 100644
  
      if (--y < 0) break;
  
-@@ -434,6 +721,18 @@ void UiHistoryView::Draw()
+@@ -434,6 +750,18 @@ void UiHistoryView::Draw()
    }
  
    wrefresh(m_PaddedWin);
@@ -5991,10 +6036,10 @@ index ce5934c..03b2c8b 100644
    int m_HistoryShowCount = 0;
 diff --git a/src/uiimage.cpp b/src/uiimage.cpp
 new file mode 100644
-index 0000000..ab19614
+index 0000000..43ba070
 --- /dev/null
 +++ b/src/uiimage.cpp
-@@ -0,0 +1,417 @@
+@@ -0,0 +1,466 @@
 +// uiimage.cpp
 +//
 +// shortcut: shells out to `kitten icat` per image on layout change, simple but spawns a process per
@@ -6318,13 +6363,61 @@ index 0000000..ab19614
 +  return px;
 +}
 +
++// 1x1-cell bitmap: the area outside a quarter circle in one corner is painted (bubble color), the inside stays
++// transparent so the dark card cell underneath shows through with a round corner.
++static std::vector<uint8_t> MakeInverseCorner(int p_Shape, Rgb p_Color, int p_CellW, int p_CellH)
++{
++  const int W = p_CellW;
++  const int H = p_CellH;
++  const double R = std::min((double)p_CellW, p_CellH * 0.45);
++  std::vector<uint8_t> px((size_t)W * H * 4, 0);
++  for (int y = 0; y < H; ++y)
++  {
++    for (int x = 0; x < W; ++x)
++    {
++      int outside = 0;
++      for (int sy = 0; sy < 4; ++sy)
++      {
++        for (int sx = 0; sx < 4; ++sx)
++        {
++          double fx = x + (sx + 0.5) / 4.0;
++          double fy = y + (sy + 0.5) / 4.0;
++          if (p_Shape & 1) fx = W - fx;
++          if (p_Shape & 2) fy = H - fy;
++          bool out = false;
++          if ((fx < R) && (fy < R))
++          {
++            const double dx = R - fx;
++            const double dy = R - fy;
++            out = ((dx * dx) + (dy * dy)) > (R * R);
++          }
++
++          outside += out ? 1 : 0;
++        }
++      }
++
++      uint8_t* p = &px[((size_t)y * W + x) * 4];
++      p[0] = p_Color.r;
++      p[1] = p_Color.g;
++      p[2] = p_Color.b;
++      p[3] = (uint8_t)((outside * 255) / 16);
++    }
++  }
++
++  return px;
++}
++
 +static std::set<uint32_t> s_Transmitted;
 +
 +static void TransmitCorner(uint32_t p_Id, int p_Shape, Rgb p_Color, int p_CellW, int p_CellH, std::string& p_Out)
 +{
 +  if (s_Transmitted.count(p_Id)) return;
 +  s_Transmitted.insert(p_Id);
-+  const std::string data = Base64(MakeCorner(p_Shape, p_Color, p_CellW, p_CellH));
++  const bool inverse = (p_Shape >= 4);
++  const int imgW = inverse ? p_CellW : 2 * p_CellW;
++  const int imgH = inverse ? p_CellH : 2 * p_CellH;
++  const std::string data = Base64(inverse ? MakeInverseCorner(p_Shape - 4, p_Color, p_CellW, p_CellH)
++                                          : MakeCorner(p_Shape, p_Color, p_CellW, p_CellH));
 +  const size_t chunk = 4096;
 +  for (size_t off = 0; off < data.size(); off += chunk)
 +  {
@@ -6333,7 +6426,7 @@ index 0000000..ab19614
 +    p_Out += "\x1b_G";
 +    if (first)
 +    {
-+      p_Out += "a=t,f=32,s=" + std::to_string(2 * p_CellW) + ",v=" + std::to_string(2 * p_CellH) + ",i=" +
++      p_Out += "a=t,f=32,s=" + std::to_string(imgW) + ",v=" + std::to_string(imgH) + ",i=" +
 +        std::to_string(p_Id) + ",q=2,";
 +    }
 +
@@ -6396,7 +6489,8 @@ index 0000000..ab19614
 +      const uint32_t id = 0x40000000u + ((uint32_t)((c.shape << 4) | c.colorIdx) << 16) + (uint32_t)((cw * 131 + ch) & 0xFFFF);
 +      TransmitCorner(id, c.shape, s_Palette[c.colorIdx], cw, ch, out);
 +      out += "\x1b[" + std::to_string(c.row + 1) + ";" + std::to_string(c.col + 1) + "H";
-+      out += "\x1b_Ga=p,i=" + std::to_string(id) + ",p=" + std::to_string(placementId++) + ",c=2,r=2,C=1,z=1,q=2\x1b\\";
++      const std::string span = (c.shape >= 4) ? "c=1,r=1" : "c=2,r=2";
++      out += "\x1b_Ga=p,i=" + std::to_string(id) + ",p=" + std::to_string(placementId++) + "," + span + ",C=1,z=1,q=2\x1b\\";
 +    }
 +
 +    out += "\x1b" "8";
@@ -6414,10 +6508,10 @@ index 0000000..ab19614
 +}
 diff --git a/src/uiimage.h b/src/uiimage.h
 new file mode 100644
-index 0000000..d21a2f3
+index 0000000..7aecdc4
 --- /dev/null
 +++ b/src/uiimage.h
-@@ -0,0 +1,47 @@
+@@ -0,0 +1,48 @@
 +// uiimage.h
 +//
 +// Inline image display in kitty-graphics-capable terminals (via `kitten icat`).
@@ -6457,7 +6551,8 @@ index 0000000..d21a2f3
 +{
 +  int col = 0; // screen cell of the top-left of the 2x2 block
 +  int row = 0;
-+  int shape = 0; // 0 top-left, 1 top-right, 2 bottom-left, 3 bottom-right
++  int shape = 0; // 0..3: bubble corner (2x2 cells) top-left/top-right/bottom-left/bottom-right;
++                 // 4..7: inverse corner (1x1 cell) cutting a round hole corner into a dark quote card
 +  int colorIdx = 0; // ANSI palette index 0..15
 +};
 +void QueryPalette(); // ask the terminal for its 16 ANSI colors; call once before ncurses starts
