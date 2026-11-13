@@ -5407,7 +5407,7 @@ index 32e8e82..5652628 100644
  
    werase(m_Win);
 diff --git a/src/uihistoryview.cpp b/src/uihistoryview.cpp
-index ef9da40..8319fde 100644
+index ef9da40..2d2d495 100644
 --- a/src/uihistoryview.cpp
 +++ b/src/uihistoryview.cpp
 @@ -7,6 +7,12 @@
@@ -5753,7 +5753,7 @@ index ef9da40..8319fde 100644
      if (firstMessage && ((int)wlines.size() > maxMessageLines))
      {
        wlines.resize(maxMessageLines - 1);
-@@ -314,39 +463,153 @@ void UiHistoryView::Draw()
+@@ -314,39 +463,154 @@ void UiHistoryView::Draw()
        reactionLines = 0;
      }
  
@@ -5893,7 +5893,8 @@ index ef9da40..8319fde 100644
 +        wattroff(m_PaddedWin, A_BOLD | badgePair);
 +      }
 +
-+      const bool isCornerRow = useCornerImages && ((lineIdx == 0) || (lineIdx == (int)wlines.size() - 1));
++      // first row only blanks its corner cells when the top edge row above it is visible too (else no image comes)
++      const bool isCornerRow = useCornerImages && (((lineIdx == 0) && (y >= 1)) || (lineIdx == (int)wlines.size() - 1));
 +      if (isCornerRow)
 +      {
 +        // the corner image paints these cells, so they must be transparent underneath
@@ -5919,7 +5920,7 @@ index ef9da40..8319fde 100644
        }
        else if (isReaction)
        {
-@@ -360,8 +623,30 @@ void UiHistoryView::Draw()
+@@ -360,8 +624,30 @@ void UiHistoryView::Draw()
        if (--y < 0) break;
      }
  
@@ -5950,7 +5951,7 @@ index ef9da40..8319fde 100644
      int attributeName = isSelectedMessage ? attributeNameSelected : attributeNameNormal;
      int colorPairName = [&]()
      {
-@@ -398,7 +683,12 @@ void UiHistoryView::Draw()
+@@ -398,7 +684,12 @@ void UiHistoryView::Draw()
      {
        if (msg.timeSent != std::numeric_limits<int64_t>::max())
        {
@@ -5964,7 +5965,7 @@ index ef9da40..8319fde 100644
        }
      }
  
-@@ -419,14 +709,76 @@ void UiHistoryView::Draw()
+@@ -419,14 +710,76 @@ void UiHistoryView::Draw()
          L" user " + StrUtil::ToWString(msg.senderId);
      }
  
@@ -6044,7 +6045,7 @@ index ef9da40..8319fde 100644
  
      if (--y < 0) break;
  
-@@ -434,6 +786,18 @@ void UiHistoryView::Draw()
+@@ -434,6 +787,18 @@ void UiHistoryView::Draw()
    }
  
    wrefresh(m_PaddedWin);
@@ -6077,10 +6078,10 @@ index ce5934c..03b2c8b 100644
    int m_HistoryShowCount = 0;
 diff --git a/src/uiimage.cpp b/src/uiimage.cpp
 new file mode 100644
-index 0000000..483ddcc
+index 0000000..e0bb8fc
 --- /dev/null
 +++ b/src/uiimage.cpp
-@@ -0,0 +1,551 @@
+@@ -0,0 +1,580 @@
 +// uiimage.cpp
 +//
 +// shortcut: shells out to `kitten icat` per image on layout change, simple but spawns a process per
@@ -6533,6 +6534,8 @@ index 0000000..483ddcc
 +}
 +
 +static std::set<uint32_t> s_Transmitted;
++static std::vector<Corner> s_LastCorners; // what the screen should currently show, for Refresh()
++static void PlaceCorners(const std::vector<Corner>& p_Corners);
 +
 +static void TransmitCorner(uint32_t p_Id, int p_Shape, Rgb p_Color, int p_CellW, int p_CellH, std::string& p_Out)
 +{
@@ -6559,8 +6562,28 @@ index 0000000..483ddcc
 +  }
 +}
 +
++void Invalidate()
++{
++  if (Enabled())
++  {
++    fputs("\x1b_Ga=d,d=a,q=2\x1b\\", stdout);
++    fflush(stdout);
++  }
++
++  s_Signature.clear();
++  s_LastCorners.clear();
++}
++
++void Refresh()
++{
++  if (!Enabled() || s_LastCorners.empty()) return;
++  s_Transmitted.clear(); // also re-upload the bitmaps in case the terminal dropped them
++  PlaceCorners(s_LastCorners);
++}
++
 +void Clear()
 +{
++  s_LastCorners.clear();
 +  if (Enabled() && !s_Signature.empty())
 +  {
 +    const char* clearAll = "\x1b_Ga=d,d=a,q=2\x1b\\"; // delete every placement; uploaded corner bitmaps stay cached
@@ -6571,12 +6594,35 @@ index 0000000..483ddcc
 +  s_Signature.clear();
 +}
 +
++// transmits missing bitmaps and places every corner; safe to repeat (same ids replace the previous placement)
++static void PlaceCorners(const std::vector<Corner>& p_Corners)
++{
++  int cw = 0, ch = 0;
++  if (!CellPixels(cw, ch) || !s_PaletteReady || p_Corners.empty()) return;
++
++  std::string out = "\x1b" "7";
++  uint32_t placementId = 1;
++  for (const auto& c : p_Corners)
++  {
++    if ((c.colorIdx < 0) || (c.colorIdx > 15)) continue;
++    const uint32_t id = 0x40000000u + ((uint32_t)((c.shape << 4) | c.colorIdx) << 16) + (uint32_t)((cw * 131 + ch) & 0xFFFF);
++    TransmitCorner(id, c.shape, s_Palette[c.colorIdx], cw, ch, out);
++    out += "\x1b[" + std::to_string(c.row + 1) + ";" + std::to_string(c.col + 1) + "H";
++    const std::string span = (c.shape >= 4) ? "c=1,r=1" : "c=2,r=2";
++    out += "\x1b_Ga=p,i=" + std::to_string(id) + ",p=" + std::to_string(placementId++) + "," + span + ",C=1,z=1,q=2\x1b\\";
++  }
++
++  out += "\x1b" "8";
++  fputs(out.c_str(), stdout);
++  fflush(stdout);
++}
++
 +void ShowAll(const std::vector<Placement>& p_Placements, const std::vector<Corner>& p_Corners)
 +{
 +  if (!Enabled()) return;
 +
 +  int cw = 0, ch = 0;
-+  const bool haveCells = CellPixels(cw, ch);
++  CellPixels(cw, ch);
 +
 +  std::string signature;
 +  for (const auto& p : p_Placements)
@@ -6605,24 +6651,8 @@ index 0000000..483ddcc
 +        std::to_string(p.y) + " '" + StrUtil::EscapeSingleQuote(p.path) + "'");
 +  }
 +
-+  if (haveCells && s_PaletteReady && !p_Corners.empty())
-+  {
-+    std::string out = "\x1b" "7";
-+    uint32_t placementId = 1;
-+    for (const auto& c : p_Corners)
-+    {
-+      if ((c.colorIdx < 0) || (c.colorIdx > 15)) continue;
-+      const uint32_t id = 0x40000000u + ((uint32_t)((c.shape << 4) | c.colorIdx) << 16) + (uint32_t)((cw * 131 + ch) & 0xFFFF);
-+      TransmitCorner(id, c.shape, s_Palette[c.colorIdx], cw, ch, out);
-+      out += "\x1b[" + std::to_string(c.row + 1) + ";" + std::to_string(c.col + 1) + "H";
-+      const std::string span = (c.shape >= 4) ? "c=1,r=1" : "c=2,r=2";
-+      out += "\x1b_Ga=p,i=" + std::to_string(id) + ",p=" + std::to_string(placementId++) + "," + span + ",C=1,z=1,q=2\x1b\\";
-+    }
-+
-+    out += "\x1b" "8";
-+    fputs(out.c_str(), stdout);
-+    fflush(stdout);
-+  }
++  PlaceCorners(p_Corners);
++  s_LastCorners = p_Corners;
 +
 +  s_Signature = signature;
 +}
@@ -6634,10 +6664,10 @@ index 0000000..483ddcc
 +}
 diff --git a/src/uiimage.h b/src/uiimage.h
 new file mode 100644
-index 0000000..faa18b7
+index 0000000..027fbfe
 --- /dev/null
 +++ b/src/uiimage.h
-@@ -0,0 +1,51 @@
+@@ -0,0 +1,53 @@
 +// uiimage.h
 +//
 +// Inline image display in kitty-graphics-capable terminals (via `kitten icat`).
@@ -6687,6 +6717,8 @@ index 0000000..faa18b7
 +void QueryPalette(); // ask the terminal for its 16 ANSI colors; call once before ncurses starts
 +bool RoundedCornersAvailable();
 +void ShowAll(const std::vector<Placement>& p_Placements, const std::vector<Corner>& p_Corners);
++void Invalidate(); // the screen was cleared/redrawn: forget what is on it so the next ShowAll draws everything again
++void Refresh(); // re-send the corner images (cheap, idempotent) to heal any loss the terminal did not tell us about
 +void Clear();
 +}
 diff --git a/src/uikeyconfig.cpp b/src/uikeyconfig.cpp
@@ -8008,6 +8040,22 @@ index 4782732..fcc6e97 100644
    std::pair<std::string, std::string>& GetCurrentChatLocked();
    bool GetEditMessageActiveLocked();
    bool GetEmojiEnabledLocked();
+diff --git a/src/uiscreen.cpp b/src/uiscreen.cpp
+index d59c4e1..0834bef 100644
+--- a/src/uiscreen.cpp
++++ b/src/uiscreen.cpp
+@@ -11,8 +11,11 @@
+ 
+ #include <ncurses.h>
+ 
++#include "uiimage.h"
++
+ UiScreen::UiScreen()
+ {
++  UiImage::Invalidate(); // clearing the screen also deletes the terminal's images
+   wclear(stdscr);
+   wrefresh(stdscr);
+   getmaxyx(stdscr, m_H, m_W);
 diff --git a/src/uistatusview.cpp b/src/uistatusview.cpp
 index 4ffaa59..a158f2b 100644
 --- a/src/uistatusview.cpp
@@ -8237,19 +8285,20 @@ index c91542a..786d02b 100644
    wrefresh(m_Win);
  }
 diff --git a/src/uiview.cpp b/src/uiview.cpp
-index 786c010..1a5863a 100644
+index 786c010..eecc1f2 100644
 --- a/src/uiview.cpp
 +++ b/src/uiview.cpp
-@@ -17,6 +17,8 @@
+@@ -17,6 +17,9 @@
  #include "uilistview.h"
  #include "uiscreen.h"
  #include "uistatusview.h"
 +#include "uiaudio.h"
++#include "uiimage.h"
 +#include "timeutil.h"
  #include "uitopview.h"
  #include "uiviewbase.h"
  
-@@ -45,75 +47,72 @@ void UiView::Init()
+@@ -45,75 +48,83 @@ void UiView::Init()
  {
    m_UiScreen = std::make_shared<UiScreen>();
  
@@ -8268,9 +8317,22 @@ index 786c010..1a5863a 100644
 -    int x = 0;
 -    int y = 0;
 -    UiViewParams params(x, y, w, h, m_TopEnabled, m_UiModel);
--    m_UiTopView = std::make_shared<UiTopView>(params);
 +    UiViewParams params(0, 0, listW, bodyH, m_ListEnabled, m_UiModel);
 +    m_UiListView = std::make_shared<UiListView>(params);
++  }
++
++  {
++    UiViewParams params(m_UiListView->X() + m_UiListView->W(), 0, 1, bodyH, m_ListEnabled && (m_ListWidth > 0),
++                        m_UiModel);
++    m_UiListBorderView = std::make_shared<UiListBorderView>(params);
++  }
++
++  const int rightX = m_UiListBorderView->X() + m_UiListBorderView->W();
++  const int rightW = screenW - rightX;
++
++  {
++    UiViewParams params(rightX, 0, rightW, 1, m_TopEnabled, m_UiModel);
+     m_UiTopView = std::make_shared<UiTopView>(params);
    }
  
    {
@@ -8279,35 +8341,30 @@ index 786c010..1a5863a 100644
 -    int x = 0;
 -    int y = m_UiScreen->H() - h;
 -    UiViewParams params(x, y, w, h, m_HelpEnabled, m_UiModel);
--    m_UiHelpView = std::make_shared<UiHelpView>(params);
-+    UiViewParams params(m_UiListView->X() + m_UiListView->W(), 0, 1, bodyH, m_ListEnabled && (m_ListWidth > 0),
-+                        m_UiModel);
-+    m_UiListBorderView = std::make_shared<UiListBorderView>(params);
++    UiViewParams params(0, screenH - helpH, screenW, 1, m_HelpEnabled, m_UiModel);
+     m_UiHelpView = std::make_shared<UiHelpView>(params);
    }
  
-+  const int rightX = m_UiListBorderView->X() + m_UiListBorderView->W();
-+  const int rightW = screenW - rightX;
-+
    {
 -    int w = m_UiScreen->W();
--    int h = m_EntryHeight;
+     int h = m_EntryHeight;
 -    int x = 0;
 -    int y = m_UiScreen->H() - m_UiHelpView->H() - h;
 -    UiViewParams params(x, y, w, h, m_EntryEnabled, m_UiModel);
--    m_UiEntryView = std::make_shared<UiEntryView>(params);
-+    UiViewParams params(rightX, 0, rightW, 1, m_TopEnabled, m_UiModel);
-+    m_UiTopView = std::make_shared<UiTopView>(params);
++    int y = screenH - m_UiHelpView->H() - h;
++    UiViewParams params(rightX + 4, y, rightW - 4, h, m_EntryEnabled, m_UiModel); // gap + prompt glyph at rightX+2
+     m_UiEntryView = std::make_shared<UiEntryView>(params);
    }
  
    {
 -    int w = m_UiScreen->W();
--    int h = 1;
+     int h = 1;
 -    int x = 0;
 -    int y = m_UiScreen->H() - m_UiHelpView->H() - m_UiEntryView->H() - h;
 -    UiViewParams params(x, y, w, h, m_StatusEnabled, m_UiModel);
--    m_UiStatusView = std::make_shared<UiStatusView>(params);
-+    UiViewParams params(0, screenH - helpH, screenW, 1, m_HelpEnabled, m_UiModel);
-+    m_UiHelpView = std::make_shared<UiHelpView>(params);
++    int y = screenH - m_UiHelpView->H() - m_UiEntryView->H() - h;
++    UiViewParams params(rightX + 2, y, rightW - 2, h, m_StatusEnabled, m_UiModel);
+     m_UiStatusView = std::make_shared<UiStatusView>(params);
    }
  
    {
@@ -8318,12 +8375,16 @@ index 786c010..1a5863a 100644
 -    int y = m_UiTopView->H();
 -    UiViewParams params(x, y, w, h, m_ListEnabled, m_UiModel);
 -    m_UiListView = std::make_shared<UiListView>(params);
-+    int h = m_EntryHeight;
-+    int y = screenH - m_UiHelpView->H() - h;
-+    UiViewParams params(rightX + 4, y, rightW - 4, h, m_EntryEnabled, m_UiModel); // gap + prompt glyph at rightX+2
-+    m_UiEntryView = std::make_shared<UiEntryView>(params);
++    int h = screenH - m_UiTopView->H() - m_UiHelpView->H() - m_UiEntryView->H() - m_UiStatusView->H();
++    UiViewParams params(rightX, m_UiTopView->H(), rightW, h, m_HistoryEnabled, m_UiModel);
++    m_UiHistoryView = std::make_shared<UiHistoryView>(params);
    }
++}
  
++void UiView::Draw()
++{
++  // corner images are re-sent every couple of seconds, so a bubble that lost its round corners heals itself
++  static int64_t lastImageRefreshMs = 0;
    {
 -    int w = 1;
 -    int h = m_UiScreen->H() - m_UiTopView->H() - m_UiHelpView->H() -
@@ -8332,12 +8393,19 @@ index 786c010..1a5863a 100644
 -    int y = m_UiTopView->H();
 -    UiViewParams params(x, y, w, h, m_ListEnabled && (m_ListWidth > 0), m_UiModel);
 -    m_UiListBorderView = std::make_shared<UiListBorderView>(params);
-+    int h = 1;
-+    int y = screenH - m_UiHelpView->H() - m_UiEntryView->H() - h;
-+    UiViewParams params(rightX + 2, y, rightW - 2, h, m_StatusEnabled, m_UiModel);
-+    m_UiStatusView = std::make_shared<UiStatusView>(params);
++    const int64_t refreshNowMs = TimeUtil::GetCurrentTimeMSec();
++    if ((refreshNowMs - lastImageRefreshMs) > 2000)
++    {
++      lastImageRefreshMs = refreshNowMs;
++      UiImage::Refresh();
++    }
    }
  
++  // inline audio player: refresh the bubble while a track plays (about 5 times a second), and when it ends
++  static int64_t lastAudioRedrawMs = 0;
++  const bool audioEnded = UiAudio::Poll();
++  const int64_t nowMs = TimeUtil::GetCurrentTimeMSec();
++  if (audioEnded || (UiAudio::IsPlaying() && ((nowMs - lastAudioRedrawMs) > 200)))
    {
 -    int x = m_UiListBorderView->X() + m_UiListBorderView->W();
 -    int w = m_UiScreen->W() - x;
@@ -8345,24 +8413,14 @@ index 786c010..1a5863a 100644
 -      m_UiEntryView->H() - m_UiStatusView->H();
 -    int y = m_UiTopView->H();
 -    UiViewParams params(x, y, w, h, m_HistoryEnabled, m_UiModel);
-+    int h = screenH - m_UiTopView->H() - m_UiHelpView->H() - m_UiEntryView->H() - m_UiStatusView->H();
-+    UiViewParams params(rightX, m_UiTopView->H(), rightW, h, m_HistoryEnabled, m_UiModel);
-     m_UiHistoryView = std::make_shared<UiHistoryView>(params);
-   }
- }
- 
- void UiView::Draw()
- {
-+  // inline audio player: refresh the bubble while a track plays (about 5 times a second), and when it ends
-+  static int64_t lastAudioRedrawMs = 0;
-+  const bool audioEnded = UiAudio::Poll();
-+  const int64_t nowMs = TimeUtil::GetCurrentTimeMSec();
-+  if (audioEnded || (UiAudio::IsPlaying() && ((nowMs - lastAudioRedrawMs) > 200)))
-+  {
+-    m_UiHistoryView = std::make_shared<UiHistoryView>(params);
 +    lastAudioRedrawMs = nowMs;
 +    m_UiHistoryView->SetDirty(true);
-+  }
-+
+   }
+-}
+ 
+-void UiView::Draw()
+-{
    m_UiTopView->Draw();
    m_UiHelpView->Draw();
    m_UiStatusView->Draw();
