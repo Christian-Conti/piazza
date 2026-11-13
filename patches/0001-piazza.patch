@@ -7109,7 +7109,7 @@ index f5af738..2087136 100644
      m_Result = false;
      m_Running = false;
 diff --git a/src/uimodel.cpp b/src/uimodel.cpp
-index d40b779..4c8c9e0 100644
+index d40b779..22a4b46 100644
 --- a/src/uimodel.cpp
 +++ b/src/uimodel.cpp
 @@ -8,6 +8,7 @@
@@ -7195,7 +7195,7 @@ index d40b779..4c8c9e0 100644
    }
  
    SendProtocolRequest(profileId, sendMessageRequest);
-@@ -247,6 +283,57 @@ void UiModel::Impl::EntryKeyHandler(wint_t p_Key)
+@@ -247,6 +283,63 @@ void UiModel::Impl::EntryKeyHandler(wint_t p_Key)
    const int messageCount = m_Messages[profileId][chatId].size();
    int& messageOffset = m_MessageOffset[profileId][chatId];
  
@@ -7208,6 +7208,12 @@ index d40b779..4c8c9e0 100644
 +    {
 +      UiAudio::Toggle(audioPath); // play / pause the voice message in place
 +      UpdateHistory();
++      return;
++    }
++
++    if (selecting && !m_FocusList && entryStr.empty() && (p_Key >= L'1') && (p_Key <= L'6'))
++    {
++      QuickReact((int)(p_Key - L'1'));
 +      return;
 +    }
 +
@@ -7253,7 +7259,7 @@ index d40b779..4c8c9e0 100644
    if (p_Key == keyUp)
    {
      if (GetSelectMessageActive() && !GetEditMessageActive())
-@@ -545,6 +632,166 @@ void UiModel::Impl::SetTyping(const std::string& p_ProfileId, const std::string&
+@@ -545,6 +638,166 @@ void UiModel::Impl::SetTyping(const std::string& p_ProfileId, const std::string&
    }
  }
  
@@ -7420,7 +7426,7 @@ index d40b779..4c8c9e0 100644
  void UiModel::Impl::OnKeyNextChat()
  {
    AnyUserKeyInput();
-@@ -553,12 +800,10 @@ void UiModel::Impl::OnKeyNextChat()
+@@ -553,12 +806,10 @@ void UiModel::Impl::OnKeyNextChat()
  
    if (m_ChatVec.empty()) return;
  
@@ -7436,7 +7442,7 @@ index d40b779..4c8c9e0 100644
    m_CurrentChat = m_ChatVec.at(m_CurrentChatIndex);
    OnCurrentChatChanged();
    SetSelectMessageActive(false);
-@@ -572,12 +817,10 @@ void UiModel::Impl::OnKeyPrevChat()
+@@ -572,12 +823,10 @@ void UiModel::Impl::OnKeyPrevChat()
  
    if (m_ChatVec.empty()) return;
  
@@ -7452,7 +7458,7 @@ index d40b779..4c8c9e0 100644
    m_CurrentChat = m_ChatVec.at(m_CurrentChatIndex);
    OnCurrentChatChanged();
    SetSelectMessageActive(false);
-@@ -598,7 +841,7 @@ void UiModel::Impl::OnKeyUnreadChat()
+@@ -598,7 +847,7 @@ void UiModel::Impl::OnKeyUnreadChat()
    {
      const std::pair<std::string, std::string>& chat = m_ChatVec.at(i);
      const bool isUnread = GetChatIsUnread(chat.first, chat.second);
@@ -7461,7 +7467,7 @@ index d40b779..4c8c9e0 100644
      {
        unreadVec.push_back(i);
        if (m_CurrentChatIndex == (int)i)
-@@ -1348,6 +1591,9 @@ void UiModel::Impl::TransferFile(const std::vector<std::string>& p_FilePaths)
+@@ -1348,6 +1597,9 @@ void UiModel::Impl::TransferFile(const std::vector<std::string>& p_FilePaths)
        FileInfo fileInfo;
        fileInfo.filePath = filePath;
        fileInfo.fileType = FileUtil::GetMimeType(filePath);
@@ -7471,7 +7477,7 @@ index d40b779..4c8c9e0 100644
  
        std::shared_ptr<SendMessageRequest> sendMessageRequest =
          std::make_shared<SendMessageRequest>();
-@@ -1372,13 +1618,14 @@ void UiModel::Impl::TransferFile(const std::vector<std::string>& p_FilePaths)
+@@ -1372,13 +1624,14 @@ void UiModel::Impl::TransferFile(const std::vector<std::string>& p_FilePaths)
          }
        }
  
@@ -7487,7 +7493,7 @@ index d40b779..4c8c9e0 100644
          }
        }
  
-@@ -1860,7 +2107,12 @@ void UiModel::Impl::MessageHandler(std::shared_ptr<ServiceMessage> p_ServiceMess
+@@ -1860,7 +2113,12 @@ void UiModel::Impl::MessageHandler(std::shared_ptr<ServiceMessage> p_ServiceMess
        {
          std::shared_ptr<SendMessageNotify> sendMessageNotify = std::static_pointer_cast<SendMessageNotify>(
            p_ServiceMessage);
@@ -7501,7 +7507,7 @@ index d40b779..4c8c9e0 100644
        }
        break;
  
-@@ -2497,12 +2749,7 @@ void UiModel::Impl::SortChats()
+@@ -2497,12 +2755,7 @@ void UiModel::Impl::SortChats()
  
    if (!m_ChatVec.empty())
    {
@@ -7515,7 +7521,7 @@ index d40b779..4c8c9e0 100644
      {
        for (size_t i = 0; i < m_ChatVec.size(); ++i)
        {
-@@ -2615,6 +2862,8 @@ void UiModel::Impl::UpdateChatInfoIsUnread(const std::string& p_ProfileId, const
+@@ -2615,6 +2868,8 @@ void UiModel::Impl::UpdateChatInfoIsUnread(const std::string& p_ProfileId, const
              m_TriggerTerminalBell = true;
            }
  
@@ -7524,7 +7530,7 @@ index d40b779..4c8c9e0 100644
            bool desktopNotify = false;
            if (m_TerminalActive)
            {
-@@ -3258,15 +3507,11 @@ bool UiModel::Impl::IsCurrentChatSet()
+@@ -3258,15 +3513,11 @@ bool UiModel::Impl::IsCurrentChatSet()
    return (m_CurrentChatIndex >= 0);
  }
  
@@ -7543,7 +7549,7 @@ index d40b779..4c8c9e0 100644
  }
  
  void UiModel::Impl::SetTerminalActive(bool p_TerminalActive)
-@@ -3293,6 +3538,36 @@ void UiModel::Impl::SetTerminalActive(bool p_TerminalActive)
+@@ -3293,6 +3544,36 @@ void UiModel::Impl::SetTerminalActive(bool p_TerminalActive)
    }
  }
  
@@ -7580,7 +7586,7 @@ index d40b779..4c8c9e0 100644
  void UiModel::Impl::DesktopNotify(const std::string& p_Name, const std::string& p_Text)
  {
    static const bool desktopNotifyEnabled = UiConfig::GetBool("desktop_notify_enabled");
-@@ -3723,6 +3998,138 @@ void UiModel::Impl::SaveEditMessage()
+@@ -3723,6 +4004,160 @@ void UiModel::Impl::SaveEditMessage()
    Clear(false /*p_AllowUndo*/);
  }
  
@@ -7617,10 +7623,32 @@ index d40b779..4c8c9e0 100644
 +  return true;
 +}
 +
++bool UiModel::Impl::QuickKeyContext()
++{
++  return GetSelectMessageActive() && !GetEditMessageActive() && !m_FocusList &&
++    m_EntryStr[m_CurrentChat.first][m_CurrentChat.second].empty();
++}
++
++// 1..6 on the selected message: 👍 ❤️ 😂 😮 😢 🙏; pressing the one you already gave removes it
++void UiModel::Impl::QuickReact(int p_Index)
++{
++  static const std::vector<std::string> quick = { "\xF0\x9F\x91\x8D", "\xE2\x9D\xA4\xEF\xB8\x8F", "\xF0\x9F\x98\x82",
++                                                  "\xF0\x9F\x98\xAE", "\xF0\x9F\x98\xA2", "\xF0\x9F\x99\x8F" };
++  if ((p_Index < 0) || (p_Index >= (int)quick.size())) return;
++
++  std::string profileId, chatId, senderId, msgId, selfEmoji;
++  bool hasLimitedReactions = false;
++  if (!PreReact(profileId, chatId, senderId, msgId, selfEmoji, hasLimitedReactions)) return;
++
++  const std::string& chosen = quick.at(p_Index);
++  SetReact(profileId, chatId, senderId, msgId, selfEmoji, (selfEmoji == chosen) ? std::string() : chosen);
++}
++
 +// message the next sent text will reply to: the selected one, or the one fixed with the reply key
-+bool UiModel::Impl::GetSelectedMessagePreview(std::string& p_Name, std::string& p_Text)
++bool UiModel::Impl::GetSelectedMessagePreview(std::string& p_Name, std::string& p_Text, bool* p_Selecting)
 +{
 +  if (GetEditMessageActive()) return false;
++  if (p_Selecting != nullptr) *p_Selecting = GetSelectMessageActive();
 +
 +  const std::string& profileId = m_CurrentChat.first;
 +  const std::string& chatId = m_CurrentChat.second;
@@ -7719,7 +7747,7 @@ index d40b779..4c8c9e0 100644
  void UiModel::Impl::OnKeyCancel()
  {
    AnyUserKeyInput();
-@@ -3733,6 +4140,8 @@ void UiModel::Impl::OnKeyCancel()
+@@ -3733,6 +4168,8 @@ void UiModel::Impl::OnKeyCancel()
      SetEditMessageActive(false);
    }
  
@@ -7728,7 +7756,7 @@ index d40b779..4c8c9e0 100644
    Clear(allowUndo);
  }
  
-@@ -4385,14 +4794,24 @@ void UiModel::Impl::AddQuoteFromSelectedMessage(ChatMessage& p_ChatMessage)
+@@ -4385,14 +4822,24 @@ void UiModel::Impl::AddQuoteFromSelectedMessage(ChatMessage& p_ChatMessage)
    const int messageOffset = m_MessageOffset[profileId][chatId];
    const std::unordered_map<std::string, ChatMessage>& messages = m_Messages[profileId][chatId];
  
@@ -7758,7 +7786,7 @@ index d40b779..4c8c9e0 100644
    if (msg == messages.end())
    {
      LOG_WARNING("error finding selected message content");
-@@ -4571,6 +4990,16 @@ void UiModel::KeyHandler(wint_t p_Key)
+@@ -4571,6 +5018,16 @@ void UiModel::KeyHandler(wint_t p_Key)
    static wint_t keyHome = UiKeyConfig::GetKey("home");
  
    static wint_t keySendMsg = UiKeyConfig::GetKey("send_msg");
@@ -7775,7 +7803,7 @@ index d40b779..4c8c9e0 100644
    static wint_t keyNextChat = UiKeyConfig::GetKey("next_chat");
    static wint_t keyPrevChat = UiKeyConfig::GetKey("prev_chat");
    static wint_t keyUnreadChat = UiKeyConfig::GetKey("unread_chat");
-@@ -4660,6 +5089,26 @@ void UiModel::KeyHandler(wint_t p_Key)
+@@ -4660,6 +5117,26 @@ void UiModel::KeyHandler(wint_t p_Key)
      std::unique_lock<owned_mutex> lock(m_ModelMutex);
      GetImpl().OnKeyToggleEmoji();
    }
@@ -7802,7 +7830,7 @@ index d40b779..4c8c9e0 100644
    else if (p_Key == keyNextChat)
    {
      std::unique_lock<owned_mutex> lock(m_ModelMutex);
-@@ -4796,8 +5245,15 @@ void UiModel::KeyHandler(wint_t p_Key)
+@@ -4796,8 +5273,15 @@ void UiModel::KeyHandler(wint_t p_Key)
    }
    else if (p_Key == keyCancel)
    {
@@ -7820,7 +7848,18 @@ index d40b779..4c8c9e0 100644
    }
    else if (p_Key == keyDecreaseListWidth)
    {
-@@ -5055,6 +5511,60 @@ std::string UiModel::GetContactPhoneLocked(const std::string& p_ProfileId, const
+@@ -4852,6 +5336,10 @@ void UiModel::KeyHandler(wint_t p_Key)
+   {
+     OnKeyAutoCompose();
+   }
++  else if ((p_Key == L'r') && [this]() { std::unique_lock<owned_mutex> lock(m_ModelMutex); return GetImpl().QuickKeyContext(); }())
++  {
++    OnKeyReact(); // full emoji list, same as Alt-S
++  }
+   else
+   {
+     std::unique_lock<owned_mutex> lock(m_ModelMutex);
+@@ -5055,6 +5543,60 @@ std::string UiModel::GetContactPhoneLocked(const std::string& p_ProfileId, const
    return GetImpl().GetContactPhone(p_ProfileId, p_ChatId);
  }
  
@@ -7830,10 +7869,10 @@ index d40b779..4c8c9e0 100644
 +  return GetImpl().GetFocusList();
 +}
 +
-+bool UiModel::GetSelectedMessagePreviewLocked(std::string& p_Name, std::string& p_Text)
++bool UiModel::GetSelectedMessagePreviewLocked(std::string& p_Name, std::string& p_Text, bool* p_Selecting)
 +{
 +  nc_assert(m_ModelMutex.owns_lock());
-+  return GetImpl().GetSelectedMessagePreview(p_Name, p_Text);
++  return GetImpl().GetSelectedMessagePreview(p_Name, p_Text, p_Selecting);
 +}
 +
 +int UiModel::GetTabLocked()
@@ -7881,7 +7920,7 @@ index d40b779..4c8c9e0 100644
  int UiModel::GetCurrentChatIndexLocked()
  {
    nc_assert(m_ModelMutex.owns_lock());
-@@ -5265,7 +5775,9 @@ std::vector<std::string> UiModel::SelectFile()
+@@ -5265,7 +5807,9 @@ std::vector<std::string> UiModel::SelectFile()
      static const bool filePickerPersistDir = UiConfig::GetBool("file_picker_persist_dir");
      if (!filePickerPersistDir || currentDir.empty())
      {
@@ -7892,7 +7931,7 @@ index d40b779..4c8c9e0 100644
      }
  
      UiDialogParams params(this, "Send File", 0.75, 0.65);
-@@ -5284,9 +5796,18 @@ std::vector<std::string> UiModel::SelectFile()
+@@ -5284,9 +5828,18 @@ std::vector<std::string> UiModel::SelectFile()
  void UiModel::OnKeyTransfer()
  {
    // Pre-req
@@ -7911,7 +7950,7 @@ index d40b779..4c8c9e0 100644
    }
  
    // Open modal dialog without model mutex held
-@@ -5760,7 +6281,29 @@ void UiModel::OnKeyCopy()
+@@ -5760,7 +6313,29 @@ void UiModel::OnKeyCopy()
  
  void UiModel::OnKeyPaste()
  {
@@ -7942,7 +7981,7 @@ index d40b779..4c8c9e0 100644
    {
      // Open modal dialog without model mutex held
      static const bool confirmSendPastedImage = UiConfig::GetBool("confirm_send_pasted_image");
-@@ -5774,8 +6317,9 @@ void UiModel::OnKeyPaste()
+@@ -5774,8 +6349,9 @@ void UiModel::OnKeyPaste()
  
      static int index = 0;
      ++index;
@@ -7955,7 +7994,7 @@ index d40b779..4c8c9e0 100644
        MessageDialog("Warning", "Failed getting clipboard image.", 0.7, 5);
        return;
 diff --git a/src/uimodel.h b/src/uimodel.h
-index 4782732..fcc6e97 100644
+index 4782732..98c1b64 100644
 --- a/src/uimodel.h
 +++ b/src/uimodel.h
 @@ -7,6 +7,7 @@
@@ -7988,22 +8027,24 @@ index 4782732..fcc6e97 100644
      void OnKeyNextChat();
      void OnKeyPrevChat();
      void OnKeyUnreadChat();
-@@ -171,7 +187,14 @@ private:
+@@ -171,7 +187,16 @@ private:
      void Cut();
      void Copy();
      void Paste();
 +    void OnKeyReply();
 +    bool GetSelectedAudioPath(std::string& p_Path);
++    bool QuickKeyContext(); // a message is selected, list not focused, prompt empty: single keys act on the message
++    void QuickReact(int p_Index);
 +    void OnKeyBack();
 +    bool HasReplyTarget();
 +    void ClearReplyTarget();
-+    bool GetSelectedMessagePreview(std::string& p_Name, std::string& p_Text);
++    bool GetSelectedMessagePreview(std::string& p_Name, std::string& p_Text, bool* p_Selecting = nullptr);
      void OnKeyCancel();
 +    bool IsIdleForQuit(); // nothing to cancel: no edit, no selection, empty entry
      bool PreEditMsg(std::string& p_ProfileId, std::string& p_ChatId, std::string& p_MsgId,
                      std::string& p_MsgDialogText);
      void StartEditMsg(const std::string& p_ProfileId, const std::string& p_ChatId, const std::string& p_MsgId);
-@@ -216,6 +239,7 @@ private:
+@@ -216,6 +241,7 @@ private:
      void ResetMessageOffset();
      bool IsCurrentChatSet();
      bool SetCurrentChatIndexIfNotSet();
@@ -8011,7 +8052,7 @@ index 4782732..fcc6e97 100644
      void DesktopNotify(const std::string& p_Name, const std::string& p_Text);
      void SetHistoryInteraction(bool p_HistoryInteraction);
      std::string GetSelectedMessageText();
-@@ -252,6 +276,12 @@ private:
+@@ -252,6 +278,12 @@ private:
  
      std::pair<std::string, std::string> m_CurrentChat;
      int m_CurrentChatIndex = -1;
@@ -8024,11 +8065,11 @@ index 4782732..fcc6e97 100644
      static const std::pair<std::string, std::string> s_ChatNone;
  
      std::string m_EditMessageId;
-@@ -351,6 +381,15 @@ public:
+@@ -351,6 +383,15 @@ public:
    std::string GetContactNameLocked(const std::string& p_ProfileId, const std::string& p_ChatId);
    std::string GetContactPhoneLocked(const std::string& p_ProfileId, const std::string& p_ChatId);
    int GetCurrentChatIndexLocked();
-+  bool GetSelectedMessagePreviewLocked(std::string& p_Name, std::string& p_Text);
++  bool GetSelectedMessagePreviewLocked(std::string& p_Name, std::string& p_Text, bool* p_Selecting = nullptr);
 +  int GetTabLocked();
 +  int GetTabCountLocked();
 +  std::string GetTabNameLocked(int p_Tab);
@@ -8057,7 +8098,7 @@ index d59c4e1..0834bef 100644
    wrefresh(stdscr);
    getmaxyx(stdscr, m_H, m_W);
 diff --git a/src/uistatusview.cpp b/src/uistatusview.cpp
-index 4ffaa59..a158f2b 100644
+index 4ffaa59..58887e7 100644
 --- a/src/uistatusview.cpp
 +++ b/src/uistatusview.cpp
 @@ -7,8 +7,14 @@
@@ -8075,7 +8116,7 @@ index 4ffaa59..a158f2b 100644
  #include "uicolorconfig.h"
  #include "uiconfig.h"
  #include "uimodel.h"
-@@ -20,7 +26,54 @@ UiStatusView::UiStatusView(const UiViewParams& p_Params)
+@@ -20,7 +26,55 @@ UiStatusView::UiStatusView(const UiViewParams& p_Params)
  
  void UiStatusView::Draw()
  {
@@ -8085,8 +8126,9 @@ index 4ffaa59..a158f2b 100644
 +  // reply banner while a message is selected; redraw whenever it changes
 +  std::string replyName;
 +  std::string replyText;
-+  const bool isReplying = m_Model->GetSelectedMessagePreviewLocked(replyName, replyText);
-+  const std::string replyKey = isReplying ? (replyName + "\x1f" + replyText) : std::string();
++  bool isSelecting = false;
++  const bool isReplying = m_Model->GetSelectedMessagePreviewLocked(replyName, replyText, &isSelecting);
++  const std::string replyKey = isReplying ? (replyName + "\x1f" + replyText + (isSelecting ? "\x1fS" : "")) : std::string();
 +  static std::string lastReplyKey;
 +  if (replyKey != lastReplyKey)
 +  {
@@ -8131,7 +8173,7 @@ index 4ffaa59..a158f2b 100644
    m_Dirty = false;
  
    curs_set(0);
-@@ -42,7 +95,18 @@ void UiStatusView::Draw()
+@@ -42,7 +96,21 @@ void UiStatusView::Draw()
    wattron(m_Win, attribute | colorPair);
  
    std::wstring wstatus;
@@ -8140,8 +8182,11 @@ index 4ffaa59..a158f2b 100644
 +  {
 +    if (!m_Model->GetEmojiEnabledLocked()) replyText = StrUtil::Textize(replyText);
 +    const std::wstring banner = L" \u21a9 " + StrUtil::ToWString(replyName) + L": " + StrUtil::ToWString(replyText);
-+    const std::wstring hint = L"   Enter: send reply \u00b7 Ctrl-C: cancel";
-+    wstatus = StrUtil::TrimPadWString(banner, std::max(0, m_W - (int)hint.size())) + hint;
++    // selecting: quick reactions and keys; quote fixed: how to send / cancel
++    const std::wstring hint = isSelecting
++      ? StrUtil::ToWString("  1\xF0\x9F\x91\x8D 2\xE2\x9D\xA4\xEF\xB8\x8F 3\xF0\x9F\x98\x82 4\xF0\x9F\x98\xAE 5\xF0\x9F\x98\xA2 6\xF0\x9F\x99\x8F  r more \u00b7 m reply")
++      : std::wstring(L"   Enter: send reply \u00b7 Ctrl-C: cancel");
++    wstatus = StrUtil::TrimPadWString(banner, std::max(0, m_W - StrUtil::WStringWidth(hint))) + hint;
 +  }
 +  else if (!uploadLine.empty())
 +  {

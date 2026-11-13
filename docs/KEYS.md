@@ -10,6 +10,8 @@
 | `Esc` | leave message selection / quote, focus contacts |
 | `Enter` | send; on a selected attachment: enlarge |
 | `Shift-Enter` (`Alt-Enter`) | new line |
+| `1`..`6` on a selected message | quick reaction 👍 ❤️ 😂 😮 😢 🙏 (same key again removes it) |
+| `r` / `Alt-S` on a selected message | full reaction list |
 | `m` / `Ctrl-M` / `Alt-M` | on a selected message: quote it; again: drop quote |
 | `Ctrl-V` / `Alt-V` | paste text or image |
 | `Ctrl-T` | attach a file |
