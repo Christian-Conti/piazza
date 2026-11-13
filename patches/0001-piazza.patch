@@ -1,5 +1,5 @@
 diff --git a/CMakeLists.txt b/CMakeLists.txt
-index dd01aef..db072b3 100644
+index dd01aefe..db072b34 100644
 --- a/CMakeLists.txt
 +++ b/CMakeLists.txt
 @@ -442,6 +442,10 @@ add_executable(nchat
@@ -14,7 +14,7 @@ index dd01aef..db072b3 100644
    src/uilistborderview.h
    src/uilistdialog.cpp
 diff --git a/lib/duchat/src/duchat.cpp b/lib/duchat/src/duchat.cpp
-index c0de985..00e347f 100644
+index c0de9853..00e347fa 100644
 --- a/lib/duchat/src/duchat.cpp
 +++ b/lib/duchat/src/duchat.cpp
 @@ -7,6 +7,10 @@
@@ -78,7 +78,7 @@ index c0de985..00e347f 100644
          sendMessageNotify->chatMessage = sendMessageRequest->chatMessage;
          m_MessageHandler(sendMessageNotify);
 diff --git a/lib/ncutil/CMakeLists.txt b/lib/ncutil/CMakeLists.txt
-index ade7523..b2922cf 100644
+index ade75231..b2922cf5 100644
 --- a/lib/ncutil/CMakeLists.txt
 +++ b/lib/ncutil/CMakeLists.txt
 @@ -79,6 +79,8 @@ add_library(ncutil ${LIBRARY_LINKING_TYPE}
@@ -91,7 +91,7 @@ index ade7523..b2922cf 100644
    src/strutil.h
    src/sysutil.cpp
 diff --git a/lib/ncutil/src/apputil.cpp b/lib/ncutil/src/apputil.cpp
-index acd190c..7fca9a3 100644
+index acd190cc..7fca9a3e 100644
 --- a/lib/ncutil/src/apputil.cpp
 +++ b/lib/ncutil/src/apputil.cpp
 @@ -29,6 +29,12 @@
@@ -116,7 +116,7 @@ index acd190c..7fca9a3 100644
      UNUSED(write(STDERR_FILENO, logMsg, strlen(logMsg)));
    }
 diff --git a/lib/ncutil/src/apputil.h b/lib/ncutil/src/apputil.h
-index 6d9c539..21ec2ca 100644
+index 6d9c539c..21ec2ca3 100644
 --- a/lib/ncutil/src/apputil.h
 +++ b/lib/ncutil/src/apputil.h
 @@ -26,6 +26,7 @@ public:
@@ -135,7 +135,7 @@ index 6d9c539..21ec2ca 100644
    static volatile sig_atomic_t m_TerminateSignal;
  };
 diff --git a/lib/ncutil/src/emojilist.cpp b/lib/ncutil/src/emojilist.cpp
-index 2522942..5b75928 100644
+index 25229420..5b759287 100644
 --- a/lib/ncutil/src/emojilist.cpp
 +++ b/lib/ncutil/src/emojilist.cpp
 @@ -7,6 +7,8 @@
@@ -245,7 +245,7 @@ index 2522942..5b75928 100644
 +  *m_Db << "UPDATE emojis SET usages = usages + 1, last_used = CAST(strftime('%s','now') AS INT) WHERE name = ?;" << p_Name;
  }
 diff --git a/lib/ncutil/src/emojilist.h b/lib/ncutil/src/emojilist.h
-index dfa4e2a..77e1d49 100644
+index dfa4e2af..77e1d49e 100644
 --- a/lib/ncutil/src/emojilist.h
 +++ b/lib/ncutil/src/emojilist.h
 @@ -23,7 +23,8 @@ public:
@@ -260,7 +260,7 @@ index dfa4e2a..77e1d49 100644
  private:
 diff --git a/lib/ncutil/src/emojiutil_group.h b/lib/ncutil/src/emojiutil_group.h
 new file mode 100644
-index 0000000..8ea6505
+index 00000000..8ea6505a
 --- /dev/null
 +++ b/lib/ncutil/src/emojiutil_group.h
 @@ -0,0 +1,3971 @@
@@ -4237,7 +4237,7 @@ index 0000000..8ea6505
 +};
 diff --git a/lib/ncutil/src/uploadprogress.cpp b/lib/ncutil/src/uploadprogress.cpp
 new file mode 100644
-index 0000000..fc80226
+index 00000000..fc80226f
 --- /dev/null
 +++ b/lib/ncutil/src/uploadprogress.cpp
 @@ -0,0 +1,64 @@
@@ -4307,7 +4307,7 @@ index 0000000..fc80226
 +}
 diff --git a/lib/ncutil/src/uploadprogress.h b/lib/ncutil/src/uploadprogress.h
 new file mode 100644
-index 0000000..bd4f40c
+index 00000000..bd4f40ce
 --- /dev/null
 +++ b/lib/ncutil/src/uploadprogress.h
 @@ -0,0 +1,27 @@
@@ -4339,7 +4339,7 @@ index 0000000..bd4f40c
 +  static std::vector<Item> Snapshot();
 +};
 diff --git a/lib/tgchat/src/tgchat.cpp b/lib/tgchat/src/tgchat.cpp
-index 2926fe0..3f81ba5 100644
+index 2926fe01..3f81ba5a 100644
 --- a/lib/tgchat/src/tgchat.cpp
 +++ b/lib/tgchat/src/tgchat.cpp
 @@ -38,6 +38,7 @@
@@ -4389,7 +4389,7 @@ index 2926fe0..3f81ba5 100644
    [](auto& anyupdate)
    {
 diff --git a/lib/wmchat/go/cgowm.go b/lib/wmchat/go/cgowm.go
-index df68388..bba0dfe 100644
+index df683886..bba0dfef 100644
 --- a/lib/wmchat/go/cgowm.go
 +++ b/lib/wmchat/go/cgowm.go
 @@ -28,6 +28,7 @@ package main
@@ -4413,7 +4413,7 @@ index df68388..bba0dfe 100644
  	C.WmClearStatus(C.int(connId), C.int(flags))
  }
 diff --git a/lib/wmchat/go/gowm.go b/lib/wmchat/go/gowm.go
-index 4b1b0bc..20c8601 100644
+index 4b1b0bc9..20c86018 100644
 --- a/lib/wmchat/go/gowm.go
 +++ b/lib/wmchat/go/gowm.go
 @@ -9,6 +9,7 @@ package main
@@ -4538,7 +4538,7 @@ index 4b1b0bc..20c8601 100644
  					LOG_WARNING(fmt.Sprintf("upload error %#v", upErr))
  					return -1
 diff --git a/lib/wmchat/src/wmchat.cpp b/lib/wmchat/src/wmchat.cpp
-index ec95181..a373594 100644
+index ec95181b..a3735944 100644
 --- a/lib/wmchat/src/wmchat.cpp
 +++ b/lib/wmchat/src/wmchat.cpp
 @@ -19,6 +19,7 @@
@@ -4571,7 +4571,7 @@ index ec95181..a373594 100644
  {
    WmChat* instance = WmChat::GetInstance(p_ConnId);
 diff --git a/src/main.cpp b/src/main.cpp
-index f8d47c3..ace3be3 100644
+index f8d47c3b..ace3be3a 100644
 --- a/src/main.cpp
 +++ b/src/main.cpp
 @@ -30,6 +30,7 @@
@@ -4592,7 +4592,7 @@ index f8d47c3..ace3be3 100644
  
    if (AppUtil::IsTerminateRequested())
 diff --git a/src/ui.cpp b/src/ui.cpp
-index bf7098e..31ea959 100644
+index bf7098ea..31ea9590 100644
 --- a/src/ui.cpp
 +++ b/src/ui.cpp
 @@ -20,6 +20,7 @@
@@ -4626,7 +4626,7 @@ index bf7098e..31ea959 100644
    EmojiList::Init();
 diff --git a/src/uiaudio.cpp b/src/uiaudio.cpp
 new file mode 100644
-index 0000000..90d2418
+index 00000000..90d2418b
 --- /dev/null
 +++ b/src/uiaudio.cpp
 @@ -0,0 +1,200 @@
@@ -4832,7 +4832,7 @@ index 0000000..90d2418
 +}
 diff --git a/src/uiaudio.h b/src/uiaudio.h
 new file mode 100644
-index 0000000..59a9ae8
+index 00000000..59a9ae85
 --- /dev/null
 +++ b/src/uiaudio.h
 @@ -0,0 +1,27 @@
@@ -4864,7 +4864,7 @@ index 0000000..59a9ae8
 +bool Poll(); // reap a finished player; true when playback just ended
 +}
 diff --git a/src/uicolorconfig.cpp b/src/uicolorconfig.cpp
-index 5dadae9..76df8ad 100644
+index 5dadae9c..76df8ad4 100644
 --- a/src/uicolorconfig.cpp
 +++ b/src/uicolorconfig.cpp
 @@ -7,6 +7,8 @@
@@ -5077,7 +5077,7 @@ index 5dadae9..76df8ad 100644
    if ((p_Str.size() == 8) && (p_Str.substr(0, 2) == "0x"))
    {
 diff --git a/src/uicolorconfig.h b/src/uicolorconfig.h
-index 08acde9..3d9d426 100644
+index 08acde9f..3d9d426f 100644
 --- a/src/uicolorconfig.h
 +++ b/src/uicolorconfig.h
 @@ -21,6 +21,7 @@ public:
@@ -5089,7 +5089,7 @@ index 08acde9..3d9d426 100644
  private:
    static int GetColorId(const std::string& p_Str);
 diff --git a/src/uiconfig.cpp b/src/uiconfig.cpp
-index a852e2b..2b9259a 100644
+index a852e2b4..2b9259ae 100644
 --- a/src/uiconfig.cpp
 +++ b/src/uiconfig.cpp
 @@ -33,6 +33,9 @@ void UiConfig::Init()
@@ -5112,7 +5112,7 @@ index a852e2b..2b9259a 100644
      { "mark_read_any_chat", "0" },
      { "mark_read_on_view", "1" },
 diff --git a/src/uidialog.cpp b/src/uidialog.cpp
-index 4d18550..462ac99 100644
+index 4d185502..462ac996 100644
 --- a/src/uidialog.cpp
 +++ b/src/uidialog.cpp
 @@ -7,6 +7,8 @@
@@ -5181,7 +5181,7 @@ index 4d18550..462ac99 100644
    if (!m_Footer.empty())
    {
 diff --git a/src/uidialog.h b/src/uidialog.h
-index 69935ea..e9220a9 100644
+index 69935eae..e9220a96 100644
 --- a/src/uidialog.h
 +++ b/src/uidialog.h
 @@ -42,6 +42,7 @@ public:
@@ -5193,7 +5193,7 @@ index 69935ea..e9220a9 100644
  private:
    void DrawBorder();
 diff --git a/src/uiemojilistdialog.cpp b/src/uiemojilistdialog.cpp
-index de3fe1d..922b0cb 100644
+index de3fe1db..922b0cba 100644
 --- a/src/uiemojilistdialog.cpp
 +++ b/src/uiemojilistdialog.cpp
 @@ -10,10 +10,17 @@
@@ -5300,7 +5300,7 @@ index de3fe1d..922b0cb 100644
    if (m_HasNoneOption)
    {
 diff --git a/src/uiemojilistdialog.h b/src/uiemojilistdialog.h
-index 705aa8c..ab165a0 100644
+index 705aa8c9..ab165a0f 100644
 --- a/src/uiemojilistdialog.h
 +++ b/src/uiemojilistdialog.h
 @@ -24,17 +24,21 @@ protected:
@@ -5326,7 +5326,7 @@ index 705aa8c..ab165a0 100644
    bool m_HasLimitedEmojis = false;
    bool m_HasAvailableEmojisPending = false;
 diff --git a/src/uientryview.cpp b/src/uientryview.cpp
-index 4bdb3a5..ed0f102 100644
+index 4bdb3a59..ed0f1028 100644
 --- a/src/uientryview.cpp
 +++ b/src/uientryview.cpp
 @@ -8,6 +8,7 @@
@@ -5393,7 +5393,7 @@ index 4bdb3a5..ed0f102 100644
  
    for (int i = 0; i < m_H; ++i)
 diff --git a/src/uientryview.h b/src/uientryview.h
-index f08b8ed..44858f9 100644
+index f08b8ed4..44858f92 100644
 --- a/src/uientryview.h
 +++ b/src/uientryview.h
 @@ -14,9 +14,11 @@ class UiEntryView : public UiViewBase
@@ -5409,7 +5409,7 @@ index f08b8ed..44858f9 100644
    int m_CursY = 0;
  };
 diff --git a/src/uihelpview.cpp b/src/uihelpview.cpp
-index 32e8e82..5652628 100644
+index 32e8e829..56526280 100644
 --- a/src/uihelpview.cpp
 +++ b/src/uihelpview.cpp
 @@ -22,7 +22,18 @@ UiHelpView::UiHelpView(const UiViewParams& p_Params)
@@ -5466,7 +5466,7 @@ index 32e8e82..5652628 100644
  
    werase(m_Win);
 diff --git a/src/uihistoryview.cpp b/src/uihistoryview.cpp
-index ef9da404..ff83d84c 100644
+index ef9da404..549110c3 100644
 --- a/src/uihistoryview.cpp
 +++ b/src/uihistoryview.cpp
 @@ -7,6 +7,13 @@
@@ -5680,7 +5680,7 @@ index ef9da404..ff83d84c 100644
          if (!quotedIt->second.text.empty())
          {
            quotedText = StrUtil::Split(quotedIt->second.text, '\n').at(0);
-@@ -161,17 +241,25 @@ void UiHistoryView::Draw()
+@@ -161,17 +241,26 @@ void UiHistoryView::Draw()
          quotedText = "";
        }
  
@@ -5709,10 +5709,11 @@ index ef9da404..ff83d84c 100644
 +    bool imgIsVideo = false;
 +    int imgDurationSec = 0;
 +    std::string imgPath;
++    std::string videoAnimPath;
      if (!msg.fileInfo.empty())
      {
        FileInfo fileInfo = ProtocolUtil::FileInfoFromHex(msg.fileInfo);
-@@ -181,10 +269,26 @@ void UiHistoryView::Draw()
+@@ -181,10 +270,26 @@ void UiHistoryView::Draw()
          (AppConfig::GetNum("attachment_prefetch") == AttachmentPrefetchAll);
        static const bool isAttachmentPrefetchSelected =
          (AppConfig::GetNum("attachment_prefetch") == AttachmentPrefetchSelected);
@@ -5740,7 +5741,7 @@ index ef9da404..ff83d84c 100644
            m_Model->DownloadAttachmentLocked(currentChat.first, currentChat.second, *it,
                                              fileInfo.fileId, DownloadFileActionNone);
            fileInfo = ProtocolUtil::FileInfoFromHex(msg.fileInfo);
-@@ -221,7 +325,57 @@ void UiHistoryView::Draw()
+@@ -221,7 +326,62 @@ void UiHistoryView::Draw()
        }
  
        std::wstring fileStr = attachmentIndicator + StrUtil::ToWString(fileName + fileStatus);
@@ -5771,7 +5772,12 @@ index ef9da404..ff83d84c 100644
 +      {
 +
 +        if (UiImage::IsImagePath(fileInfo.filePath)) imgPath = UiImage::DisplayablePath(fileInfo.filePath);
-+        else if (UiImage::IsVideoPath(fileInfo.filePath)) imgPath = UiImage::VideoThumbnail(fileInfo.filePath);
++        else if (UiImage::IsVideoPath(fileInfo.filePath))
++        {
++          imgPath = UiImage::VideoThumbnail(fileInfo.filePath);
++          const std::string anim = UiImage::VideoAnimation(fileInfo.filePath); // still frame until the GIF is ready
++          if (!imgPath.empty() && !anim.empty()) videoAnimPath = anim;
++        }
 +
 +        if (!imgPath.empty())
 +        {
@@ -5799,7 +5805,7 @@ index ef9da404..ff83d84c 100644
      }
  
      // Reactions
-@@ -289,7 +443,7 @@ void UiHistoryView::Draw()
+@@ -289,7 +449,7 @@ void UiHistoryView::Draw()
              reactionsText = StrUtil::Textize(reactionsText);
            }
  
@@ -5808,7 +5814,7 @@ index ef9da404..ff83d84c 100644
            std::wstring reactions = StrUtil::ToWString(reactionsText);
            if (StrUtil::WStringWidth(reactions) > maxReactionsLen)
            {
-@@ -306,7 +460,7 @@ void UiHistoryView::Draw()
+@@ -306,7 +466,7 @@ void UiHistoryView::Draw()
        }
      }
  
@@ -5817,7 +5823,7 @@ index ef9da404..ff83d84c 100644
      if (firstMessage && ((int)wlines.size() > maxMessageLines))
      {
        wlines.resize(maxMessageLines - 1);
-@@ -314,39 +468,154 @@ void UiHistoryView::Draw()
+@@ -314,39 +474,154 @@ void UiHistoryView::Draw()
        reactionLines = 0;
      }
  
@@ -5884,7 +5890,7 @@ index ef9da404..ff83d84c 100644
 +      {
 +        // top row of the image block: remember where to draw the picture once the window is flushed
 +        UiImage::Placement placement;
-+        placement.path = imgPath;
++        placement.path = videoAnimPath.empty() ? imgPath : videoAnimPath;
 +        placement.x = paddedBegX + bx + 2;
 +        placement.y = paddedBegY + y;
 +        placement.cols = imgCols;
@@ -5936,10 +5942,12 @@ index ef9da404..ff83d84c 100644
 +        wattron(m_PaddedWin, quoteAttr | (msg.isOutgoing ? kind.quoteSent : kind.quoteRecv));
 +        mvwaddnwstr(m_PaddedWin, y, bx + 2, inset.c_str(), std::min((int)inset.size(), bubbleW - 4));
 +        wattroff(m_PaddedWin, quoteAttr | (msg.isOutgoing ? kind.quoteSent : kind.quoteRecv));
-+      }
+       }
+-      else if (isQuote)
 +
 +      if (imgIsVideo && (imgRows > 0) && (lineIdx == imgRows / 2))
-+      {
+       {
+-        wattroff(m_PaddedWin, attributeText | colorPairTextQuoted);
 +        // play badge (with duration) centered on the thumbnail; the picture is drawn below the text
 +        std::wstring badge = L" \u25b6 ";
 +        if (imgDurationSec > 0)
@@ -5964,13 +5972,11 @@ index ef9da404..ff83d84c 100644
 +        mvwaddnwstr(m_PaddedWin, y, bx, L"  ", 2);
 +        mvwaddnwstr(m_PaddedWin, y, bx + bubbleW - 2, L"  ", 2);
 +        wattroff(m_PaddedWin, colorPairPane);
-       }
--      else if (isQuote)
++      }
 +
 +      // soft sides: the outer cells become half blocks (right half on the left edge, left half on the right edge)
 +      if (!isCornerRow)
-       {
--        wattroff(m_PaddedWin, attributeText | colorPairTextQuoted);
++      {
 +        const int sidePair = isSelectedMessage ? colorPairEdgeSelected : (msg.isOutgoing ? kind.edgeSent : kind.edgeRecv);
 +        wattron(m_PaddedWin, sidePair);
 +        mvwaddnwstr(m_PaddedWin, y, bx, L"\u2590", 1);
@@ -5984,7 +5990,7 @@ index ef9da404..ff83d84c 100644
        }
        else if (isReaction)
        {
-@@ -360,8 +629,54 @@ void UiHistoryView::Draw()
+@@ -360,8 +635,54 @@ void UiHistoryView::Draw()
        if (--y < 0) break;
      }
  
@@ -6039,7 +6045,7 @@ index ef9da404..ff83d84c 100644
      int attributeName = isSelectedMessage ? attributeNameSelected : attributeNameNormal;
      int colorPairName = [&]()
      {
-@@ -398,7 +713,12 @@ void UiHistoryView::Draw()
+@@ -398,7 +719,12 @@ void UiHistoryView::Draw()
      {
        if (msg.timeSent != std::numeric_limits<int64_t>::max())
        {
@@ -6053,7 +6059,7 @@ index ef9da404..ff83d84c 100644
        }
      }
  
-@@ -419,14 +739,76 @@ void UiHistoryView::Draw()
+@@ -419,14 +745,76 @@ void UiHistoryView::Draw()
          L" user " + StrUtil::ToWString(msg.senderId);
      }
  
@@ -6133,7 +6139,7 @@ index ef9da404..ff83d84c 100644
  
      if (--y < 0) break;
  
-@@ -434,6 +816,25 @@ void UiHistoryView::Draw()
+@@ -434,6 +822,25 @@ void UiHistoryView::Draw()
    }
  
    wrefresh(m_PaddedWin);
@@ -6160,7 +6166,7 @@ index ef9da404..ff83d84c 100644
  
  int UiHistoryView::GetHistoryShowCount()
 diff --git a/src/uihistoryview.h b/src/uihistoryview.h
-index ce5934c..03b2c8b 100644
+index ce5934c6..03b2c8be 100644
 --- a/src/uihistoryview.h
 +++ b/src/uihistoryview.h
 @@ -25,6 +25,7 @@ private:
@@ -6173,10 +6179,10 @@ index ce5934c..03b2c8b 100644
    int m_HistoryShowCount = 0;
 diff --git a/src/uiimage.cpp b/src/uiimage.cpp
 new file mode 100644
-index 0000000..3cf5e2a
+index 00000000..0bd4abed
 --- /dev/null
 +++ b/src/uiimage.cpp
-@@ -0,0 +1,643 @@
+@@ -0,0 +1,690 @@
 +// uiimage.cpp
 +//
 +// shortcut: shells out to `kitten icat` per image on layout change, simple but spawns a process per
@@ -6196,7 +6202,10 @@ index 0000000..3cf5e2a
 +#include <cstdio>
 +#include <cstdlib>
 +
++#include <atomic>
 +#include <functional>
++#include <mutex>
++#include <thread>
 +#include <set>
 +
 +#include "fileutil.h"
@@ -6316,6 +6325,7 @@ index 0000000..3cf5e2a
 +  return hasFfmpeg;
 +}
 +
++static std::mutex s_AutoMutex;
 +static std::set<std::string> s_AutoIds;
 +static std::set<std::string> s_AutoFiles;
 +
@@ -6327,6 +6337,7 @@ index 0000000..3cf5e2a
 +
 +void DeleteAutoFiles()
 +{
++  std::lock_guard<std::mutex> lock(s_AutoMutex);
 +  for (const auto& path : s_AutoFiles) std::remove(path.c_str());
 +  s_AutoFiles.clear();
 +  std::remove(ManifestPath().c_str());
@@ -6355,6 +6366,7 @@ index 0000000..3cf5e2a
 +void RememberAutoFile(const std::string& p_Path)
 +{
 +  static const bool registered = (std::atexit(DeleteAutoFiles) == 0);
++  std::lock_guard<std::mutex> lock(s_AutoMutex);
 +  if (!registered || !s_AutoFiles.insert(p_Path).second) return;
 +
 +  FileUtil::MkDir(FileUtil::GetApplicationDir() + "/temp");
@@ -6387,6 +6399,47 @@ index 0000000..3cf5e2a
 +std::string VideoThumbnail(const std::string& p_Path)
 +{
 +  return ConvertToPng(p_Path, "-frames:v 1 -vf scale=480:-2");
++}
++
++// Looping silent GIF of the first seconds, built in the background so the bubble shows the still frame at once
++// and starts moving when the GIF is ready. One ffmpeg at a time. shortcut: 8 s at 10 fps, 320 px wide.
++static std::atomic<bool> s_AnimReady(false);
++bool TakeAnimReady() { return s_AnimReady.exchange(false); }
++
++std::string VideoAnimation(const std::string& p_Path)
++{
++  if (!CanThumbnailVideos()) return "";
++
++  const std::string out = FileUtil::GetApplicationDir() + "/temp/anim_" +
++    std::to_string(std::hash<std::string>()(p_Path)) + ".gif";
++  if (FileUtil::Exists(out)) return out;
++
++  static std::mutex mtx;
++  static std::set<std::string> started;
++  {
++    std::lock_guard<std::mutex> lock(mtx);
++    if (!started.insert(p_Path).second) return "";
++  }
++
++  std::thread([p_Path, out]() {
++    static std::mutex convMtx; // one ffmpeg at a time
++    std::lock_guard<std::mutex> lock(convMtx);
++    FileUtil::MkDir(FileUtil::GetApplicationDir() + "/temp");
++    const std::string tmp = out + ".part";
++    const std::string cmd = "ffmpeg -loglevel quiet -y -t 8 -i '" + StrUtil::EscapeSingleQuote(p_Path) +
++      "' -an -f gif -vf \"fps=10,scale='min(320,iw)':-2:flags=bilinear,split[a][b];[a]palettegen=max_colors=96[p];"
++      "[b][p]paletteuse\" '" + tmp + "' </dev/null >/dev/null 2>&1";
++    if ((system(cmd.c_str()) == 0) && FileUtil::Exists(tmp) && (std::rename(tmp.c_str(), out.c_str()) == 0))
++    {
++      RememberAutoFile(out);
++      s_AnimReady = true;
++    }
++    else
++    {
++      std::remove(tmp.c_str());
++    }
++  }).detach();
++  return "";
 +}
 +
 +// kitty's decoder rejects some WhatsApp .webp variants (lossy + alpha); ffmpeg reads them, so go through PNG
@@ -6822,10 +6875,10 @@ index 0000000..3cf5e2a
 +}
 diff --git a/src/uiimage.h b/src/uiimage.h
 new file mode 100644
-index 0000000..2c411f5
+index 00000000..4bd7af6b
 --- /dev/null
 +++ b/src/uiimage.h
-@@ -0,0 +1,57 @@
+@@ -0,0 +1,59 @@
 +// uiimage.h
 +//
 +// Inline image display in kitty-graphics-capable terminals (via `kitten icat`).
@@ -6854,6 +6907,8 @@ index 0000000..2c411f5
 +bool IsVideoPath(const std::string& p_Path); // mp4/webm/mov/mkv: Telegram/WhatsApp "GIFs" are mp4
 +std::string DisplayablePath(const std::string& p_Path); // image path kitty can decode (webp -> png via ffmpeg)
 +std::string VideoThumbnail(const std::string& p_Path); // first frame as PNG via ffmpeg, "" if unavailable
++std::string VideoAnimation(const std::string& p_Path); // looping GIF if ready, else "" and starts building it
++bool TakeAnimReady(); // true once after a GIF became ready: redraw the history
 +bool CanThumbnailVideos(); // ffmpeg present
 +// files nchat fetched on its own for inline display; deleted when the session ends
 +void MarkAutoDownload(const std::string& p_FileId);
@@ -6884,7 +6939,7 @@ index 0000000..2c411f5
 +void Clear();
 +}
 diff --git a/src/uikeyconfig.cpp b/src/uikeyconfig.cpp
-index e4d9356..7b8216b 100644
+index e4d93564..7b8216b6 100644
 --- a/src/uikeyconfig.cpp
 +++ b/src/uikeyconfig.cpp
 @@ -37,6 +37,7 @@ void UiKeyConfig::InitKeyCodes(bool p_MapKeys)
@@ -6959,7 +7014,7 @@ index e4d9356..7b8216b 100644
      { "goto_chat", "KEY_CTRLN" },
      { "other_commands_help", "KEY_CTRLO" },
 diff --git a/src/uikeyinput.cpp b/src/uikeyinput.cpp
-index b483b1b..14c4f4b 100644
+index b483b1b8..14c4f4b9 100644
 --- a/src/uikeyinput.cpp
 +++ b/src/uikeyinput.cpp
 @@ -11,9 +11,33 @@
@@ -6997,7 +7052,7 @@ index b483b1b..14c4f4b 100644
    {
      *p_Wch = UiKeyConfig::GetOffsettedKeyCode(*p_Wch, true);
 diff --git a/src/uikeyinput.h b/src/uikeyinput.h
-index fc12219..211482c 100644
+index fc122191..211482cc 100644
 --- a/src/uikeyinput.h
 +++ b/src/uikeyinput.h
 @@ -13,4 +13,5 @@ class UiKeyInput
@@ -7007,7 +7062,7 @@ index fc12219..211482c 100644
 +  static bool GetLastMouse(int& p_X, int& p_Y, unsigned long& p_State); // event behind the last KEY_MOUSE key
  };
 diff --git a/src/uilistdialog.cpp b/src/uilistdialog.cpp
-index baf13d6..ac23e3c 100644
+index baf13d66..ac23e3c4 100644
 --- a/src/uilistdialog.cpp
 +++ b/src/uilistdialog.cpp
 @@ -62,6 +62,7 @@ bool UiListDialog::Run()
@@ -7071,7 +7126,7 @@ index baf13d6..ac23e3c 100644
  
      if (isShaded)
 diff --git a/src/uilistdialog.h b/src/uilistdialog.h
-index b89cc9b..b33bc97 100644
+index b89cc9b0..b33bc976 100644
 --- a/src/uilistdialog.h
 +++ b/src/uilistdialog.h
 @@ -25,6 +25,7 @@ protected:
@@ -7083,19 +7138,20 @@ index b89cc9b..b33bc97 100644
  
    void UpdateFooter();
 diff --git a/src/uilistview.cpp b/src/uilistview.cpp
-index e3a9160..8923cee 100644
+index e3a91601..4467397b 100644
 --- a/src/uilistview.cpp
 +++ b/src/uilistview.cpp
-@@ -7,6 +7,8 @@
+@@ -6,6 +6,9 @@
+ // nchat is distributed under the MIT license, see LICENSE for details.
  
  #include "uilistview.h"
- 
-+#include <ctime>
++#include <algorithm>
 +
++#include <ctime>
+ 
  #include "strutil.h"
  #include "uicolorconfig.h"
- #include "uiconfig.h"
-@@ -17,11 +19,12 @@ UiListView::UiListView(const UiViewParams& p_Params)
+@@ -17,11 +20,12 @@ UiListView::UiListView(const UiViewParams& p_Params)
  {
    if (m_Enabled)
    {
@@ -7110,7 +7166,7 @@ index e3a9160..8923cee 100644
  
      static int colorPair = UiColorConfig::GetColorPair("list_color");
      static int attribute = UiColorConfig::GetAttribute("list_attr");
-@@ -39,6 +42,12 @@ UiListView::~UiListView()
+@@ -39,6 +43,12 @@ UiListView::~UiListView()
      delwin(m_PaddedWin);
      m_PaddedWin = nullptr;
    }
@@ -7123,7 +7179,7 @@ index e3a9160..8923cee 100644
  }
  
  void UiListView::Draw()
-@@ -52,20 +61,105 @@ void UiListView::Draw()
+@@ -52,20 +62,105 @@ void UiListView::Draw()
    static int attribute = UiColorConfig::GetAttribute("list_attr");
    static int attributeSelected = UiColorConfig::GetAttribute("list_attr_selected");
    static int colorPairUnread = UiColorConfig::GetColorPair("list_color_unread");
@@ -7231,7 +7287,7 @@ index e3a9160..8923cee 100644
    }
  
    werase(m_PaddedWin);
-@@ -76,6 +170,7 @@ void UiListView::Draw()
+@@ -76,6 +171,7 @@ void UiListView::Draw()
    {
      int height = m_PaddedH;
      int count = names.size();
@@ -7239,7 +7295,7 @@ index e3a9160..8923cee 100644
      int offset = std::min(std::max(0, index - ((height - 1) / 2)), std::max(0, count - height));
      int last = std::min((height + offset), count);
      for (int i = offset; i < last; ++i)
-@@ -83,18 +178,37 @@ void UiListView::Draw()
+@@ -83,18 +179,40 @@ void UiListView::Draw()
        if (i == index)
        {
          wattroff(m_PaddedWin, attribute);
@@ -7276,12 +7332,15 @@ index e3a9160..8923cee 100644
 +      const int rightReserved = (timeW > 0 ? timeW + 1 : 0) + unreadW;
 +      const int nameW = std::max(4, m_PaddedW - rightReserved);
 +
-+      std::wstring wname = StrUtil::ToWString(name).substr(0, nameW);
++      std::wstring wname = StrUtil::ToWString(name);
++      // U+FE0F (emoji presentation) makes the terminal draw 2 cells where wcwidth/ncurses count 1: the row drifts
++      wname.erase(std::remove(wname.begin(), wname.end(), L'\uFE0F'), wname.end());
++      wname = wname.substr(0, nameW);
 +      wname = StrUtil::TrimPadWString(wname, m_PaddedW); // pads the whole row so the selection bar spans it
  
        if (unreads[i])
        {
-@@ -105,16 +219,20 @@ void UiListView::Draw()
+@@ -105,16 +223,20 @@ void UiListView::Draw()
  
        if (unreads[i])
        {
@@ -7307,7 +7366,7 @@ index e3a9160..8923cee 100644
          wattron(m_PaddedWin, attribute);
        }
      }
-@@ -122,4 +240,7 @@ void UiListView::Draw()
+@@ -122,4 +244,7 @@ void UiListView::Draw()
  
    wattroff(m_PaddedWin, attribute | colorPair);
    wrefresh(m_PaddedWin);
@@ -7316,7 +7375,7 @@ index e3a9160..8923cee 100644
 +  m_Model->SetListHitsLocked(hits);
  }
 diff --git a/src/uilistview.h b/src/uilistview.h
-index e00eeae..6c7d41c 100644
+index e00eeae0..6c7d41c8 100644
 --- a/src/uilistview.h
 +++ b/src/uilistview.h
 @@ -21,6 +21,7 @@ public:
@@ -7328,7 +7387,7 @@ index e00eeae..6c7d41c 100644
    int m_PaddedW = 0;
  };
 diff --git a/src/uimessagedialog.cpp b/src/uimessagedialog.cpp
-index f5af738..2087136 100644
+index f5af7384..20871360 100644
 --- a/src/uimessagedialog.cpp
 +++ b/src/uimessagedialog.cpp
 @@ -48,6 +48,7 @@ bool UiMessageDialog::Run()
@@ -7349,7 +7408,7 @@ index f5af738..2087136 100644
      m_Result = false;
      m_Running = false;
 diff --git a/src/uimodel.cpp b/src/uimodel.cpp
-index d40b779..553465b 100644
+index d40b779d..553465bb 100644
 --- a/src/uimodel.cpp
 +++ b/src/uimodel.cpp
 @@ -8,6 +8,7 @@
@@ -8534,7 +8593,7 @@ index d40b779..553465b 100644
        MessageDialog("Warning", "Failed getting clipboard image.", 0.7, 5);
        return;
 diff --git a/src/uimodel.h b/src/uimodel.h
-index 4782732..12d2529 100644
+index 4782732f..12d25296 100644
 --- a/src/uimodel.h
 +++ b/src/uimodel.h
 @@ -7,6 +7,7 @@
@@ -8660,7 +8719,7 @@ index 4782732..12d2529 100644
    bool GetEditMessageActiveLocked();
    bool GetEmojiEnabledLocked();
 diff --git a/src/uiscreen.cpp b/src/uiscreen.cpp
-index d59c4e1..0834bef 100644
+index d59c4e1f..0834bef3 100644
 --- a/src/uiscreen.cpp
 +++ b/src/uiscreen.cpp
 @@ -11,8 +11,11 @@
@@ -8676,7 +8735,7 @@ index d59c4e1..0834bef 100644
    wrefresh(stdscr);
    getmaxyx(stdscr, m_H, m_W);
 diff --git a/src/uistatusview.cpp b/src/uistatusview.cpp
-index 4ffaa59..9dac1df 100644
+index 4ffaa593..9dac1df6 100644
 --- a/src/uistatusview.cpp
 +++ b/src/uistatusview.cpp
 @@ -7,8 +7,14 @@
@@ -8787,7 +8846,7 @@ index 4ffaa59..9dac1df 100644
      // Empty status bar until current chat is set
    }
 diff --git a/src/uitextinputdialog.cpp b/src/uitextinputdialog.cpp
-index bc84e02..e1fa707 100644
+index bc84e021..e1fa7075 100644
 --- a/src/uitextinputdialog.cpp
 +++ b/src/uitextinputdialog.cpp
 @@ -50,6 +50,7 @@ bool UiTextInputDialog::Run()
@@ -8808,7 +8867,7 @@ index bc84e02..e1fa707 100644
      m_Result = false;
      m_Running = false;
 diff --git a/src/uitopview.cpp b/src/uitopview.cpp
-index c91542a..786d02b 100644
+index c91542af..786d02b0 100644
 --- a/src/uitopview.cpp
 +++ b/src/uitopview.cpp
 @@ -7,6 +7,11 @@
@@ -8920,7 +8979,7 @@ index c91542a..786d02b 100644
    wrefresh(m_Win);
  }
 diff --git a/src/uiview.cpp b/src/uiview.cpp
-index 786c010..eecc1f2 100644
+index 786c010c..89c024f6 100644
 --- a/src/uiview.cpp
 +++ b/src/uiview.cpp
 @@ -17,6 +17,9 @@
@@ -8933,7 +8992,7 @@ index 786c010..eecc1f2 100644
  #include "uitopview.h"
  #include "uiviewbase.h"
  
-@@ -45,75 +48,83 @@ void UiView::Init()
+@@ -45,75 +48,84 @@ void UiView::Init()
  {
    m_UiScreen = std::make_shared<UiScreen>();
  
@@ -9056,6 +9115,7 @@ index 786c010..eecc1f2 100644
  
 -void UiView::Draw()
 -{
++  if (UiImage::TakeAnimReady()) m_UiHistoryView->SetDirty(true); // a video GIF finished: redraw to start it
    m_UiTopView->Draw();
    m_UiHelpView->Draw();
    m_UiStatusView->Draw();
