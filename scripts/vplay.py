@@ -52,14 +52,23 @@ x0, y0 = max(1, (cols - ccols) // 2 + 1), 2 + max(0, ((rows - 2) - crows) // 2)
 out = sys.stdout.buffer
 
 
+cur_id = 0  # frames alternate between image ids 1 and 2: the new one is placed before the old one is deleted (no flicker)
+
+
 def send(frame):
+    global cur_id
+    new_id = 2 if cur_id == 1 else 1
     data = base64.standard_b64encode(zlib.compress(frame, 1))
-    out.write(b"\x1b[%d;%dH" % (y0, x0))
+    buf = [b"\x1b[%d;%dH" % (y0, x0)]
     for i in range(0, len(data), 4096):
         more = 1 if i + 4096 < len(data) else 0
-        head = (b"a=T,f=24,o=z,s=%d,v=%d,i=1,p=1,c=%d,r=%d,C=1,q=2,m=%d" % (W, H, ccols, crows, more)) if i == 0 \
-            else b"m=%d" % more
-        out.write(b"\x1b_G" + head + b";" + data[i:i + 4096] + b"\x1b\\")
+        head = (b"a=t,f=24,o=z,s=%d,v=%d,i=%d,q=2,m=%d" % (W, H, new_id, more)) if i == 0 else b"q=2,m=%d" % more
+        buf.append(b"\x1b_G" + head + b";" + data[i:i + 4096] + b"\x1b\\")
+    buf.append(b"\x1b_Ga=p,i=%d,p=1,c=%d,r=%d,C=1,q=2\x1b\\" % (new_id, ccols, crows))
+    if cur_id:
+        buf.append(b"\x1b_Ga=d,d=I,i=%d,q=2\x1b\\" % cur_id)
+    cur_id = new_id
+    out.write(b"".join(buf))
     out.flush()
 
 
