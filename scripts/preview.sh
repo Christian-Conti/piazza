@@ -104,7 +104,10 @@ case "$mime" in
   video/*)
     if command -v ffmpeg >/dev/null 2>&1 && command -v python3 >/dev/null 2>&1; then
       # built-in player: frames streamed to kitty, sound through ffplay, starts immediately
-      python3 "$(dirname "$(readlink -f "$0")")/vplay.py" "$f" || xdg-open "$f" >/dev/null 2>&1 &
+      # foreground: a trailing & would background the whole "a || b" list and the player would lose the keyboard
+      if ! python3 "$(dirname "$(readlink -f "$0")")/vplay.py" "$f" 2>/tmp/piazza-vplay.err; then
+        xdg-open "$f" >/dev/null 2>&1 &
+      fi
     else
       xdg-open "$f" >/dev/null 2>&1 &
     fi
