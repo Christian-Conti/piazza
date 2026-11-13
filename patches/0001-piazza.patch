@@ -4345,8 +4345,157 @@ index 2926fe0..3f81ba5 100644
    },
    [](auto& anyupdate)
    {
+diff --git a/lib/wmchat/go/cgowm.go b/lib/wmchat/go/cgowm.go
+index df68388..bba0dfe 100644
+--- a/lib/wmchat/go/cgowm.go
++++ b/lib/wmchat/go/cgowm.go
+@@ -28,6 +28,7 @@ package main
+ // extern void WmSetProtocolUiControl(int p_ConnId, int p_IsTakeControl);
+ // extern void WmSetStatus(int p_ConnId, int p_Flags);
+ // extern void WmClearStatus(int p_ConnId, int p_Flags);
++// extern void WmUploadProgress(char* p_Path, long long p_Uploaded, long long p_Total);
+ // extern int WmAppConfigGetNum(char* p_Param);
+ // extern void WmAppConfigSetNum(char* p_Param, int p_Value);
+ // extern int WmHasGui();
+@@ -210,6 +211,11 @@ func CWmSetStatus(connId int, flags int) {
+ 	C.WmSetStatus(C.int(connId), C.int(flags))
+ }
+ 
++// reports bytes uploaded so far to the UI (progress bar); the C side frees the string
++func CWmUploadProgress(path string, uploaded int64, total int64) {
++	C.WmUploadProgress(C.CString(path), C.longlong(uploaded), C.longlong(total))
++}
++
+ func CWmClearStatus(connId int, flags int) {
+ 	C.WmClearStatus(C.int(connId), C.int(flags))
+ }
+diff --git a/lib/wmchat/go/gowm.go b/lib/wmchat/go/gowm.go
+index 4b1b0bc..20c8601 100644
+--- a/lib/wmchat/go/gowm.go
++++ b/lib/wmchat/go/gowm.go
+@@ -9,6 +9,7 @@ package main
+ 
+ import (
+ 	"bufio"
++	"bytes"
+ 	"context"
+ 	"encoding/gob"
+ 	"encoding/json"
+@@ -2950,6 +2951,58 @@ func WmGetMessages(connId int, chatId string, limit int, fromMsgId string, owner
+ 	return -1
+ }
+ 
++// progressTempFile counts the bytes read from the encrypted temp file while whatsmeow uploads it,
++// and reports them to the UI. A Seek back to 0 marks the end of encryption (reads after it are the upload).
++type progressTempFile struct {
++	*os.File
++	path     string
++	total    int64
++	reading  bool
++	uploaded int64
++	last     time.Time
++}
++
++func (p *progressTempFile) Seek(offset int64, whence int) (int64, error) {
++	if offset == 0 && whence == io.SeekStart {
++		p.reading = true
++		p.uploaded = 0 // a pass over the file for the video sidecar must not count as upload
++	}
++	return p.File.Seek(offset, whence)
++}
++
++func (p *progressTempFile) Read(b []byte) (int, error) {
++	n, err := p.File.Read(b)
++	if p.reading && n > 0 {
++		p.uploaded += int64(n)
++		if time.Since(p.last) > 150*time.Millisecond {
++			p.last = time.Now()
++			CWmUploadProgress(p.path, p.uploaded, p.total)
++		}
++	}
++	return n, err
++}
++
++// UploadWithProgress is client.Upload, but streamed so the upload can be reported.
++func UploadWithProgress(client *whatsmeow.Client, data []byte, mediaType whatsmeow.MediaType, filePath string) (whatsmeow.UploadResponse, error) {
++	tmp, err := os.CreateTemp("", "piazza-upload-*")
++	if err != nil {
++		return client.Upload(context.Background(), data, mediaType) // no temp file: upload without progress
++	}
++	defer func() {
++		_ = tmp.Close()
++		_ = os.Remove(tmp.Name())
++	}()
++	// encrypted size is the plaintext plus padding (<= 16) and a 10 byte MAC
++	pf := &progressTempFile{File: tmp, path: filePath, total: int64(len(data)) + 26}
++	resp, upErr := client.UploadReader(context.Background(), bytes.NewReader(data), pf, mediaType)
++	if upErr != nil {
++		// streamed upload failed: fall back to the plain upload, so progress can never make sending worse
++		LOG_WARNING(fmt.Sprintf("streamed upload failed (%v), retrying plain upload", upErr))
++		return client.Upload(context.Background(), data, mediaType)
++	}
++	return resp, nil
++}
++
+ func WmSendMessage(connId int, chatId string, text string, quotedId string, quotedText string, quotedSender string, filePath string, fileType string, editMsgId string, editMsgSent int, mentionsJson string) int {
+ 
+ 	LOG_TRACE("send message " + strconv.Itoa(connId) + ", " + chatId + ", " + text + ", " + quotedId + ", " + filePath + ", " + editMsgId)
+@@ -3069,7 +3122,7 @@ func WmSendMessage(connId int, chatId string, text string, quotedId string, quot
+ 				return -1
+ 			}
+ 
+-			uploaded, upErr := client.Upload(context.Background(), data, whatsmeow.MediaImage)
++			uploaded, upErr := UploadWithProgress(client, data, whatsmeow.MediaImage, filePath)
+ 			if upErr != nil {
+ 				LOG_WARNING(fmt.Sprintf("upload error %#v", upErr))
+ 				return -1
+@@ -3098,7 +3151,7 @@ func WmSendMessage(connId int, chatId string, text string, quotedId string, quot
+ 				return -1
+ 			}
+ 
+-			uploaded, upErr := client.Upload(context.Background(), data, whatsmeow.MediaVideo)
++			uploaded, upErr := UploadWithProgress(client, data, whatsmeow.MediaVideo, filePath)
+ 			if upErr != nil {
+ 				LOG_WARNING(fmt.Sprintf("upload error %#v", upErr))
+ 				return -1
+@@ -3128,7 +3181,7 @@ func WmSendMessage(connId int, chatId string, text string, quotedId string, quot
+ 				return -1
+ 			}
+ 
+-			uploaded, upErr := client.Upload(context.Background(), data, whatsmeow.MediaAudio)
++			uploaded, upErr := UploadWithProgress(client, data, whatsmeow.MediaAudio, filePath)
+ 			if upErr != nil {
+ 				LOG_WARNING(fmt.Sprintf("upload error %#v", upErr))
+ 				return -1
+@@ -3174,7 +3227,7 @@ func WmSendMessage(connId int, chatId string, text string, quotedId string, quot
+ 					return -1
+ 				}
+ 
+-				uploaded, upErr := client.Upload(context.Background(), data, whatsmeow.MediaVideo)
++				uploaded, upErr := UploadWithProgress(client, data, whatsmeow.MediaVideo, filePath)
+ 				if upErr != nil {
+ 					LOG_WARNING(fmt.Sprintf("upload error %#v", upErr))
+ 					return -1
+@@ -3217,7 +3270,7 @@ func WmSendMessage(connId int, chatId string, text string, quotedId string, quot
+ 					return -1
+ 				}
+ 
+-				uploaded, upErr := client.Upload(context.Background(), data, whatsmeow.MediaImage)
++				uploaded, upErr := UploadWithProgress(client, data, whatsmeow.MediaImage, filePath)
+ 				if upErr != nil {
+ 					LOG_WARNING(fmt.Sprintf("upload error %#v", upErr))
+ 					return -1
+@@ -3260,7 +3313,7 @@ func WmSendMessage(connId int, chatId string, text string, quotedId string, quot
+ 					return -1
+ 				}
+ 
+-				uploaded, upErr := client.Upload(context.Background(), data, whatsmeow.MediaDocument)
++				uploaded, upErr := UploadWithProgress(client, data, whatsmeow.MediaDocument, filePath)
+ 				if upErr != nil {
+ 					LOG_WARNING(fmt.Sprintf("upload error %#v", upErr))
+ 					return -1
 diff --git a/lib/wmchat/src/wmchat.cpp b/lib/wmchat/src/wmchat.cpp
-index ec95181..41a2222 100644
+index ec95181..a373594 100644
 --- a/lib/wmchat/src/wmchat.cpp
 +++ b/lib/wmchat/src/wmchat.cpp
 @@ -19,6 +19,7 @@
@@ -4365,6 +4514,19 @@ index ec95181..41a2222 100644
  
          std::shared_ptr<SendMessageNotify> sendMessageNotify = std::make_shared<SendMessageNotify>(m_ProfileId);
          sendMessageNotify->success = (rv == 0);
+@@ -1273,6 +1275,12 @@ void WmSetProtocolUiControl(int p_ConnId, int p_IsTakeControl)
+   }
+ }
+ 
++void WmUploadProgress(char* p_Path, long long p_Uploaded, long long p_Total)
++{
++  UploadProgress::Update(p_Path, p_Uploaded, p_Total, false);
++  free(p_Path);
++}
++
+ void WmSetStatus(int p_ConnId, int p_Flags)
+ {
+   WmChat* instance = WmChat::GetInstance(p_ConnId);
 diff --git a/src/main.cpp b/src/main.cpp
 index f8d47c3..ace3be3 100644
 --- a/src/main.cpp

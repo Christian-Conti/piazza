@@ -7,6 +7,7 @@ All your chats in one terminal, one tab per service. A patched [nchat](https://g
   with unread counts. Adding another account adds another tab, no code change.
 - **Messaging-app layout**: full-height contact column, chat title, rounded colored bubbles (sent on the right).
 - **Inline images, stickers, GIFs** via the kitty graphics protocol; `Enter` enlarges, short videos/GIFs loop in the terminal.
+- **Voice messages / audio**: `Enter` on a selected audio message plays it in the terminal with a progress bar (`space` pause, `q` stop).
 - **Replies**: `m` / `Ctrl+M` on a selected message quotes it, quotes show as an inset card.
 - **Paste images** (`Ctrl+V`), **attach files** (`Ctrl+T`, with an upload spinner / progress bar), emoji picker with *recent* and categories, sound on new messages.
 - Colors come from your terminal theme (ANSI colors only).

@@ -13,7 +13,8 @@
 | `m` / `Ctrl-M` / `Alt-M` | on a selected message: quote it; again: drop quote |
 | `Ctrl-V` / `Alt-V` | paste text or image |
 | `Ctrl-T` | attach a file |
-| `Alt-O` | open attachment externally |
+| `Alt-O` | open attachment (same as Enter on it) |
+| audio player | `space` pause/resume, `q` / `Enter` stop; set `PIAZZA_PLAYER` to use another player |
 | `Ctrl-S` | emoji picker: `Tab`/`←`/`→` categories, `Enter` insert, recent first |
 | `Ctrl-C` | clear prompt / cancel; on an empty prompt: quit |
 | `Ctrl-Q` | quit |
