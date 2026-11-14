@@ -6,6 +6,8 @@
 | `F1`..`F9` | jump to tab N |
 | `Ctrl-B` | next chat in tab |
 | `←` / `→` | focus contacts / messages (with an empty prompt) |
+| `Enter` on the contact list | open the conversation (same as `→`) |
+| `Enter` on a message that quotes another | jump to the quoted message (a message with an attachment still opens the attachment) |
 | `↑` `↓` | contacts (list focused) or messages |
 | `←` then `↑` `↓` | **preview**: browse chats with the list focused; the right pane shows them but nothing is marked read until you open one (`→` or start typing) |
 | `Esc` | leave message selection / quote, focus contacts |

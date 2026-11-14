@@ -39,7 +39,11 @@ Config stays in `~/.config/nchat`. Existing `key.conf` / `color.conf` keep old v
 | `scripts/piazza` | launcher |
 | `config/kitty.conf.snippet` | Shift+Enter / Ctrl+M mappings |
 
-See [docs/KEYS.md](docs/KEYS.md) for keys. nchat is MIT licensed (see `nchat/LICENSE`).
+See [docs/KEYS.md](docs/KEYS.md) for keys.
+
+## License
+
+MIT, see [LICENSE](LICENSE). piazza is a set of patches on top of [nchat](https://github.com/d99kris/nchat) (MIT), which fixes the floor: derived code cannot be licensed more freely than MIT. The libraries nchat pulls in keep their own licenses (Signal support is AGPL, WhatsApp MPL, TDLib Boost); piazza patches none of those.
 
 ## Updating the patch after changing nchat sources
 
