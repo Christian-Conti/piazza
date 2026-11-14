@@ -8,7 +8,7 @@
 | `←` / `→` | focus contacts / messages (with an empty prompt) |
 | `Enter` on the contact list | open the conversation (same as `→`) |
 | `Enter` on a message that quotes another | jump to the quoted message (a message with an attachment still opens the attachment) |
-| `t` on a selected message, or `Alt-G` | Telegram forum **topics**: pick one to jump to its latest message; new messages are then sent to that topic. Each message shows its `#topic` in the header |
+| `t` on a selected message, or `Alt-G` | Telegram forum **topics**: a topic column appears next to the conversation (most recent first, unread count). Click a topic, or pick one with `t` / `Alt-G`: it jumps to the latest message and new messages are sent to that topic. Each message also shows its `#topic` |
 | `↑` `↓` | contacts (list focused) or messages |
 | `←` then `↑` `↓` | **preview**: browse chats with the list focused; the right pane shows them but nothing is marked read until you open one (`→` or start typing) |
 | `Esc` | leave message selection / quote, focus contacts |
