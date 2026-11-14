@@ -4462,7 +4462,7 @@ index 00000000..bd4f40ce
 +  static std::vector<Item> Snapshot();
 +};
 diff --git a/lib/tgchat/src/tgchat.cpp b/lib/tgchat/src/tgchat.cpp
-index 2926fe01..36b96f52 100644
+index 2926fe01..f704c75c 100644
 --- a/lib/tgchat/src/tgchat.cpp
 +++ b/lib/tgchat/src/tgchat.cpp
 @@ -38,6 +38,7 @@
@@ -4562,7 +4562,7 @@ index 2926fe01..36b96f52 100644
    },
    [](auto& anyupdate)
    {
-@@ -3648,6 +3693,39 @@ void TgChat::Impl::TdMessageContentConvert(td::td_api::MessageContent& p_TdMessa
+@@ -3648,6 +3693,42 @@ void TgChat::Impl::TdMessageContentConvert(td::td_api::MessageContent& p_TdMessa
    }
  }
  
@@ -4584,6 +4584,9 @@ index 2926fe01..36b96f52 100644
 +    {
 +      if (topic && topic->info_) m_ForumTopicNames[p_ChatId][topic->info_->forum_topic_id_] = topic->info_->name_;
 +    }
++
++    // refresh the latest messages now that the names are known: cached ones have no topic yet
++    GetChatHistory(p_ChatId, 0, 0, 100, false /*p_Sequence*/);
 +  });
 +}
 +
@@ -4602,7 +4605,7 @@ index 2926fe01..36b96f52 100644
  void TgChat::Impl::TdMessageConvert(td::td_api::message& p_TdMessage, ChatMessage& p_ChatMessage)
  {
    if (!p_TdMessage.content_) return;
-@@ -3670,6 +3748,18 @@ void TgChat::Impl::TdMessageConvert(td::td_api::message& p_TdMessage, ChatMessag
+@@ -3670,6 +3751,18 @@ void TgChat::Impl::TdMessageConvert(td::td_api::message& p_TdMessage, ChatMessag
  
    p_ChatMessage.hasMention = p_TdMessage.contains_unread_mention_;
  
